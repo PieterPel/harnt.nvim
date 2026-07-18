@@ -187,6 +187,16 @@ function M.reject(id)
   e.callback({ accepted = false })
 end
 
+--- Reject every open diff. Returns how many were closed.
+---@return integer
+function M.reject_all()
+  local ids = vim.tbl_keys(entries)
+  for _, id in ipairs(ids) do
+    M.reject(id)
+  end
+  return #ids
+end
+
 --- Number of diffs currently open (for checkhealth / tests).
 ---@return integer
 function M.open_count()

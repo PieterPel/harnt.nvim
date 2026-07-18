@@ -123,3 +123,21 @@ describe("diff default presenter", function()
     assert.equals(baseline, vim.fn.tabpagenr("$"))
   end)
 end)
+
+describe("diff.reject_all", function()
+  it("rejects every open diff and returns the count", function()
+    local r1, r2
+    diff.open({ path = "/tmp/a", proposed = {} }, function(r)
+      r1 = r
+    end)
+    diff.open({ path = "/tmp/b", proposed = {} }, function(r)
+      r2 = r
+    end)
+    assert.equals(2, diff.open_count())
+
+    assert.equals(2, diff.reject_all())
+    assert.equals(0, diff.open_count())
+    assert.is_false(r1.accepted)
+    assert.is_false(r2.accepted)
+  end)
+end)
