@@ -221,6 +221,21 @@ end
 ---@field on_message? fun(payload: string) a complete text/binary message arrived
 ---@field on_open? fun() the handshake completed
 ---@field on_close? fun() the connection closed
+---@field authenticate? fun(headers: table<string, string>): boolean reject the handshake if this returns false
+
+--- Parse HTTP request headers into a table keyed by lowercased name.
+---@param head string the raw request head (through the blank line)
+---@return table<string, string>
+local function parse_headers(head)
+  local headers = {}
+  for line in head:gmatch("[^\r\n]+") do
+    local name, value = line:match("^([%w%-]+):%s*(.-)%s*$")
+    if name then
+      headers[name:lower()] = value
+    end
+  end
+  return headers
+end
 
 ---@param opts harnt.ws.ConnectionOpts
 ---@return harnt.ws.Connection
@@ -246,6 +261,15 @@ function M.connection(opts)
     local key = head:match("[Ss]ec%-[Ww]eb[Ss]ocket%-[Kk]ey:%s*([%w%+/=]+)")
     if not key then
       opts.on_write("HTTP/1.1 400 Bad Request\r\n\r\n")
+      conn._closed = true
+      if opts.on_close then
+        opts.on_close()
+      end
+      return false
+    end
+
+    if opts.authenticate and not opts.authenticate(parse_headers(head)) then
+      opts.on_write("HTTP/1.1 401 Unauthorized\r\n\r\n")
       conn._closed = true
       if opts.on_close then
         opts.on_close()
@@ -323,6 +347,7 @@ end
 ---@class harnt.ws.ServerOpts
 ---@field host? string defaults to 127.0.0.1
 ---@field port? integer defaults to 0 (an OS-assigned port)
+---@field authenticate? fun(headers: table<string, string>): boolean reject the handshake if this returns false
 ---@field on_open? fun(client: harnt.ws.Connection)
 ---@field on_message? fun(client: harnt.ws.Connection, payload: string)
 ---@field on_close? fun(client: harnt.ws.Connection)
@@ -360,6 +385,7 @@ function M.server(opts)
     ---@type harnt.ws.Connection
     local conn
     conn = M.connection({
+      authenticate = opts.authenticate,
       on_write = function(bytes)
         if not sock:is_closing() then
           sock:write(bytes)

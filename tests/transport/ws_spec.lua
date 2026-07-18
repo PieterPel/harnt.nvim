@@ -210,3 +210,44 @@ describe("ws.server (loopback over vim.uv)", function()
     assert.equals("echo:Hello", echoed)
   end)
 end)
+
+describe("ws.connection authentication", function()
+  local function make(authenticate)
+    local state = { writes = {}, opened = false, closed = false }
+    local conn = ws.connection({
+      authenticate = authenticate,
+      on_write = function(b)
+        table.insert(state.writes, b)
+      end,
+      on_open = function()
+        state.opened = true
+      end,
+      on_close = function()
+        state.closed = true
+      end,
+    })
+    return conn, state
+  end
+
+  it("rejects the handshake with 401 when authenticate returns false", function()
+    local conn, state = make(function()
+      return false
+    end)
+    conn:feed(HANDSHAKE)
+    assert.is_false(state.opened)
+    assert.is_true(state.closed)
+    assert.is_truthy(state.writes[1]:find("401", 1, true))
+  end)
+
+  it("passes lowercased headers to authenticate and opens on true", function()
+    local seen
+    local conn, state = make(function(headers)
+      seen = headers
+      return true
+    end)
+    conn:feed(HANDSHAKE)
+    assert.is_true(state.opened)
+    assert.equals("websocket", seen["upgrade"])
+    assert.equals("dGhlIHNhbXBsZSBub25jZQ==", seen["sec-websocket-key"])
+  end)
+end)
