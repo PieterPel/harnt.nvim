@@ -1,0 +1,13 @@
+-- busted config: run the suite with Neovim as the Lua interpreter (via nlua),
+-- so tests get the real vim.uv / vim.json API. See TOOLS.md.
+return {
+  _all = {
+    lua = "nlua",
+  },
+  default = {
+    verbose = true,
+    ROOT = { "tests" },
+    pattern = "_spec",
+    helper = "tests/minimal_init.lua",
+  },
+}

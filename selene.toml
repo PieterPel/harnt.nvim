@@ -1,0 +1,8 @@
+# Lua 5.1 base + Neovim `vim` global (vim.yml) + busted/luassert test globals (busted.yml).
+std = "lua51+vim+busted"
+
+[lints]
+# luassert extends the base `assert` with fields (assert.is_table, assert.has_no.errors,
+# …) that selene can't reconcile with lua51's `assert` function. emmylua_check still
+# type-checks real standard-library use, so allowing this here only affects that overlap.
+incorrect_standard_library_use = "allow"

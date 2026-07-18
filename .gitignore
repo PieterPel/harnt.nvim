@@ -1,0 +1,16 @@
+# Nix
+result
+result-*
+.direnv/
+
+# luarocks / lux build artifacts
+.luarocks/
+lua_modules/
+*.rock
+*.src.rock
+
+# Neovim helptags (generated from doc/*.txt)
+doc/tags
+
+# OS cruft
+.DS_Store

@@ -1,0 +1,35 @@
+# harnt.nvim task runner — the SAME pipeline locally and in CI.
+# Enter the dev shell first (`nix develop`) so the tools are on PATH, or prefix
+# any recipe with nix, e.g. `nix develop -c just ci`.
+
+# Show available recipes
+default:
+    @just --list
+
+# Format everything (nix, lua, toml, justfile) via treefmt
+fmt:
+    treefmt
+
+# Fail if anything is unformatted (CI)
+fmt-check:
+    treefmt --ci
+
+# Lint Lua
+lint:
+    selene .
+
+# Type-check LuaCATS annotations (emmylua). Types vim.* via $VIMRUNTIME.
+typecheck:
+    emmylua_check .
+
+# Run the test suite: busted with Neovim as the interpreter (nlua)
+test:
+    busted
+
+# The full gate — exactly what CI runs.
+ci: fmt-check lint typecheck test
+
+# Publish the rock to luarocks.org. Needs LUAROCKS_API_KEY. Runs on tag in CI,
+# but works locally too: `LUAROCKS_API_KEY=... just publish`.
+publish:
+    luarocks upload harnt-scm-1.rockspec --api-key "${LUAROCKS_API_KEY}"

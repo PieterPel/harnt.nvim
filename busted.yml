@@ -1,0 +1,33 @@
+# Selene standard-library fragment for busted + luassert globals used in tests.
+# Merged via `std = "lua51+vim+busted"` in selene.toml. Permissive on purpose:
+# these are test-only DSL globals, not something we type-check.
+---
+globals:
+  describe:
+    any: true
+  it:
+    any: true
+  before_each:
+    any: true
+  after_each:
+    any: true
+  setup:
+    any: true
+  teardown:
+    any: true
+  lazy_setup:
+    any: true
+  lazy_teardown:
+    any: true
+  pending:
+    any: true
+  finally:
+    any: true
+  spy:
+    any: true
+  stub:
+    any: true
+  mock:
+    any: true
+  assert:
+    any: true

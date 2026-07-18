@@ -1,0 +1,27 @@
+# Codeberg CI (Forgejo Actions). Runs the exact same gate as `just ci` locally,
+# inside the Nix dev shell so the toolchain is pinned by flake.lock.
+#
+# Requires: repository Actions enabled in Codeberg settings, and a runner with
+# the `docker` label (Codeberg's shared runners provide this).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: docker
+    container:
+      image: nixos/nix:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable flakes
+        run: |
+          mkdir -p ~/.config/nix
+          echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+
+      - name: Run the pipeline
+        run: nix develop --command just ci

@@ -1,0 +1,22 @@
+# Lux manifest — OPTIONAL dev ergonomics (https://github.com/lumen-oss/lux).
+# Lux is luarocks-compatible; it can generate .luarc.json from these deps and
+# run `lux check` / `lux test` (busted-nlua backend). luarocks + the rockspec
+# (harnt-scm-1.rockspec) remain the CANONICAL packaging/release path — this file
+# is a convenience, not a requirement. Validate/regenerate with `lux` if you use it.
+package = "harnt.nvim"
+version = "0.1.0"
+
+[description]
+summary = "Drive any native-TUI coding agent in Neovim at full fidelity via reverse-MCP."
+homepage = "https://codeberg.org/PieterPel/harnt.nvim"
+license = "MIT"
+
+[dependencies]
+lua = ">=5.1"
+
+[test_dependencies]
+busted = ">=2.0"
+nlua = ">=0.3"
+
+[test]
+type = "busted"

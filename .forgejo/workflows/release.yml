@@ -1,0 +1,35 @@
+# Codeberg release (Forgejo Actions): on a version tag, run the full gate and
+# publish the rock to luarocks.org.
+#
+# Setup:
+#   - Add a repository secret LUAROCKS_API_KEY (from https://luarocks.org, your
+#     account → API keys).
+#   - Tag a release: `git tag v0.1.0 && git push origin v0.1.0`.
+#
+# The publish step is identical to `just publish`, so you can also release
+# by hand: `LUAROCKS_API_KEY=... just publish`.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: docker
+    container:
+      image: nixos/nix:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable flakes
+        run: |
+          mkdir -p ~/.config/nix
+          echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+
+      - name: Test, then publish to luarocks.org
+        env:
+          LUAROCKS_API_KEY: ${{ secrets.LUAROCKS_API_KEY }}
+        run: |
+          nix develop --command just ci
+          nix develop --command just publish

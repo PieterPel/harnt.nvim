@@ -1,0 +1,7 @@
+# Selene standard-library fragment for the Neovim `vim` global.
+# Merged on top of lua51 via `std = "lua51+vim"` in selene.toml.
+# Kept permissive for now; tighten to real signatures later if desired.
+---
+globals:
+  vim:
+    any: true
