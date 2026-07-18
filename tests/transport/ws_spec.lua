@@ -82,3 +82,131 @@ describe("ws.decode_frame", function()
     assert.equals("bb", frame2.payload)
   end)
 end)
+
+local HANDSHAKE = "GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+  .. "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+local HELLO_MASKED = string.char(0x81, 0x85, 0x37, 0xfa, 0x21, 0x3d, 0x7f, 0x9f, 0x4d, 0x51, 0x58)
+
+describe("ws.connection", function()
+  local function make()
+    local state = { writes = {}, messages = {}, opened = false, closed = false }
+    local conn = ws.connection({
+      on_write = function(b)
+        table.insert(state.writes, b)
+      end,
+      on_message = function(p)
+        table.insert(state.messages, p)
+      end,
+      on_open = function()
+        state.opened = true
+      end,
+      on_close = function()
+        state.closed = true
+      end,
+    })
+    return conn, state
+  end
+
+  it("completes the handshake with the correct 101 response", function()
+    local conn, state = make()
+    conn:feed(HANDSHAKE)
+    assert.is_true(state.opened)
+    assert.is_truthy(state.writes[1]:find("101 Switching Protocols", 1, true))
+    assert.is_truthy(state.writes[1]:find("s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", 1, true))
+  end)
+
+  it("delivers a masked client message after the handshake", function()
+    local conn, state = make()
+    conn:feed(HANDSHAKE)
+    conn:feed(HELLO_MASKED)
+    assert.same({ "Hello" }, state.messages)
+  end)
+
+  it("handles a handshake split across chunks", function()
+    local conn, state = make()
+    conn:feed(HANDSHAKE:sub(1, 20))
+    assert.is_false(state.opened)
+    conn:feed(HANDSHAKE:sub(21))
+    assert.is_true(state.opened)
+  end)
+
+  it("buffers a frame fed one byte at a time", function()
+    local conn, state = make()
+    conn:feed(HANDSHAKE)
+    for i = 1, #HELLO_MASKED do
+      conn:feed(HELLO_MASKED:sub(i, i))
+    end
+    assert.same({ "Hello" }, state.messages)
+  end)
+
+  it("replies to a ping with a pong", function()
+    local conn, state = make()
+    conn:feed(HANDSHAKE)
+    conn:feed(string.char(0x89, 0x80, 0x00, 0x00, 0x00, 0x00)) -- masked empty ping
+    local frame = ws.decode_frame(state.writes[#state.writes])
+    assert.equals(ws.opcodes.pong, frame.opcode)
+  end)
+
+  it("rejects a request without a Sec-WebSocket-Key", function()
+    local conn, state = make()
+    conn:feed("GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+    assert.is_false(state.opened)
+    assert.is_true(state.closed)
+    assert.is_truthy(state.writes[1]:find("400", 1, true))
+  end)
+
+  it("send() emits an unmasked text frame after open", function()
+    local conn, state = make()
+    conn:feed(HANDSHAKE)
+    conn:send("hi there")
+    local frame = ws.decode_frame(state.writes[#state.writes])
+    assert.equals("hi there", frame.payload)
+  end)
+end)
+
+describe("ws.server (loopback over vim.uv)", function()
+  it("performs a real TCP handshake and echoes a message", function()
+    local server = assert(ws.server({
+      on_message = function(client, payload)
+        client:send("echo:" .. payload)
+      end,
+    }))
+    assert.is_true(server.port > 0)
+
+    local buf, upgraded, echoed = "", false, nil
+    local client = vim.uv.new_tcp()
+    client:connect("127.0.0.1", server.port, function()
+      client:write(HANDSHAKE)
+    end)
+    client:read_start(function(_err, chunk)
+      if not chunk then
+        return
+      end
+      buf = buf .. chunk
+      if not upgraded then
+        local e = buf:find("\r\n\r\n", 1, true)
+        if e then
+          upgraded = true
+          buf = buf:sub(e + 4)
+          client:write(HELLO_MASKED)
+        end
+        return
+      end
+      local frame = ws.decode_frame(buf)
+      if frame then
+        echoed = frame.payload
+      end
+    end)
+
+    local ok = vim.wait(2000, function()
+      return echoed ~= nil
+    end, 10)
+    pcall(function()
+      client:close()
+    end)
+    server.close()
+
+    assert.is_true(ok)
+    assert.equals("echo:Hello", echoed)
+  end)
+end)

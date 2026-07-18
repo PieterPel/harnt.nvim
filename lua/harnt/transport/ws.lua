@@ -208,4 +208,207 @@ function M.decode_frame(data)
   return { fin = fin, opcode = opcode, payload = payload }, consumed
 end
 
+--- A transport-agnostic server-side connection state machine: feed it raw bytes,
+--- it drives the HTTP upgrade handshake then dispatches decoded frames. All I/O
+--- is via callbacks, so it's testable without a socket.
+---@class harnt.ws.Connection
+---@field feed fun(self: harnt.ws.Connection, chunk: string)
+---@field send fun(self: harnt.ws.Connection, text: string)
+---@field close fun(self: harnt.ws.Connection)
+
+---@class harnt.ws.ConnectionOpts
+---@field on_write fun(bytes: string) write bytes back to the peer
+---@field on_message? fun(payload: string) a complete text/binary message arrived
+---@field on_open? fun() the handshake completed
+---@field on_close? fun() the connection closed
+
+---@param opts harnt.ws.ConnectionOpts
+---@return harnt.ws.Connection
+function M.connection(opts)
+  local conn = {
+    _buffer = "",
+    ---@type boolean
+    _upgraded = false,
+    ---@type boolean
+    _closed = false,
+  }
+
+  --- Try to complete the opening handshake from the buffered request.
+  ---@return boolean upgraded
+  local function handshake()
+    local ends = conn._buffer:find("\r\n\r\n", 1, true)
+    if not ends then
+      return false
+    end
+    local head = conn._buffer:sub(1, ends + 3)
+    conn._buffer = conn._buffer:sub(ends + 4)
+
+    local key = head:match("[Ss]ec%-[Ww]eb[Ss]ocket%-[Kk]ey:%s*([%w%+/=]+)")
+    if not key then
+      opts.on_write("HTTP/1.1 400 Bad Request\r\n\r\n")
+      conn._closed = true
+      if opts.on_close then
+        opts.on_close()
+      end
+      return false
+    end
+
+    opts.on_write(table.concat({
+      "HTTP/1.1 101 Switching Protocols",
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      "Sec-WebSocket-Accept: " .. M.accept_key(key),
+      "",
+      "",
+    }, "\r\n"))
+    conn._upgraded = true
+    if opts.on_open then
+      opts.on_open()
+    end
+    return true
+  end
+
+  function conn:feed(chunk)
+    if self._closed then
+      return
+    end
+    self._buffer = self._buffer .. chunk
+    if not self._upgraded and not handshake() then
+      return
+    end
+
+    while not self._closed do
+      local frame, consumed = M.decode_frame(self._buffer)
+      if not frame or not consumed then
+        break
+      end
+      self._buffer = self._buffer:sub(consumed + 1)
+
+      if frame.opcode == M.opcodes.text or frame.opcode == M.opcodes.binary then
+        if opts.on_message then
+          opts.on_message(frame.payload)
+        end
+      elseif frame.opcode == M.opcodes.ping then
+        opts.on_write(M.encode_frame(frame.payload, M.opcodes.pong))
+      elseif frame.opcode == M.opcodes.close then
+        self:close()
+      end
+    end
+  end
+
+  function conn:send(text)
+    if self._upgraded and not self._closed then
+      opts.on_write(M.encode_frame(text, M.opcodes.text))
+    end
+  end
+
+  function conn:close()
+    if self._closed then
+      return
+    end
+    self._closed = true
+    opts.on_write(M.encode_frame("", M.opcodes.close))
+    if opts.on_close then
+      opts.on_close()
+    end
+  end
+
+  return conn
+end
+
+---@class harnt.ws.Server
+---@field port integer the bound port (useful when binding to port 0)
+---@field close fun() stop listening and close all clients
+
+---@class harnt.ws.ServerOpts
+---@field host? string defaults to 127.0.0.1
+---@field port? integer defaults to 0 (an OS-assigned port)
+---@field on_open? fun(client: harnt.ws.Connection)
+---@field on_message? fun(client: harnt.ws.Connection, payload: string)
+---@field on_close? fun(client: harnt.ws.Connection)
+
+--- Start a loopback WebSocket server on `vim.uv`. Returns nil + err if the bind
+--- fails. Frame processing runs in libuv fast-event callbacks (pure string work
+--- + socket writes only); handlers that touch the Neovim API must schedule.
+---@param opts? harnt.ws.ServerOpts
+---@return harnt.ws.Server? server, string? err
+function M.server(opts)
+  opts = opts or {}
+  local uv = vim.uv
+  local tcp = assert(uv.new_tcp())
+
+  local bound, berr = pcall(function()
+    assert(tcp:bind(opts.host or "127.0.0.1", opts.port or 0))
+  end)
+  if not bound then
+    pcall(function()
+      tcp:close()
+    end)
+    return nil, tostring(berr)
+  end
+
+  local sockets = {}
+
+  tcp:listen(128, function(lerr)
+    if lerr then
+      return
+    end
+    local sock = assert(uv.new_tcp())
+    tcp:accept(sock)
+    sockets[sock] = true
+
+    ---@type harnt.ws.Connection
+    local conn
+    conn = M.connection({
+      on_write = function(bytes)
+        if not sock:is_closing() then
+          sock:write(bytes)
+        end
+      end,
+      on_open = function()
+        if opts.on_open then
+          opts.on_open(conn)
+        end
+      end,
+      on_message = function(payload)
+        if opts.on_message then
+          opts.on_message(conn, payload)
+        end
+      end,
+      on_close = function()
+        if opts.on_close then
+          opts.on_close(conn)
+        end
+        if not sock:is_closing() then
+          sock:close()
+        end
+        sockets[sock] = nil
+      end,
+    })
+
+    sock:read_start(function(rerr, chunk)
+      if rerr or not chunk then
+        conn:close()
+        return
+      end
+      conn:feed(chunk)
+    end)
+  end)
+
+  local name = tcp:getsockname()
+  return {
+    port = name and name.port or 0,
+    close = function()
+      for sock in pairs(sockets) do
+        if not sock:is_closing() then
+          sock:close()
+        end
+      end
+      if not tcp:is_closing() then
+        tcp:close()
+      end
+    end,
+  }
+end
+
 return M
