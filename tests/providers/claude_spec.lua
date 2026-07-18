@@ -41,6 +41,24 @@ describe("claude.tools", function()
     assert.is_true(names.getDiagnostics)
     assert.is_true(names.getCurrentSelection)
     assert.is_true(names.closeAllDiffTabs)
+    assert.is_true(names.close_tab)
+  end)
+
+  it("close_tab acks and closes any lingering diff", function()
+    diff.set_presenter(function()
+      return { teardown = function() end }
+    end)
+    diff.open({ path = "/x", proposed = {} }, function() end)
+    local text
+    by_name(claude.tools({}), "close_tab").handler(
+      { tab_name = "Proposed changes" },
+      function(result)
+        text = result.content[1].text
+      end
+    )
+    diff.set_presenter(nil)
+    assert.equals("TAB_CLOSED", text)
+    assert.equals(0, diff.open_count())
   end)
 
   it("openDiff proposes the new contents and reports FILE_SAVED on accept", function()

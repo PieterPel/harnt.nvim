@@ -178,6 +178,21 @@ function M.tools(_ctx)
         respond(mcp.content(("CLOSED_%d_DIFF_TABS"):format(diff.reject_all())))
       end,
     },
+    {
+      -- Claude dismisses a diff tab after resolving it; our diffs already tear
+      -- down on accept/reject, so this closes any that linger and acks.
+      name = "close_tab",
+      description = "Close a tab by name.",
+      inputSchema = {
+        type = "object",
+        properties = { tab_name = { type = "string" } },
+        required = { "tab_name" },
+      },
+      handler = function(_args, respond)
+        diff.reject_all()
+        respond(mcp.content("TAB_CLOSED"))
+      end,
+    },
   }
 end
 
