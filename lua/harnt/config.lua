@@ -12,14 +12,19 @@ local M = {}
 ---@class harnt.ApprovalsConfig
 ---@field chooser? harnt.approvals.Chooser how approval prompts are shown
 
+---@class harnt.KeymapConfig
+---@field diff? { accept?: string, reject?: string } diff accept/reject keys
+
 ---@class harnt.Config
 ---@field diff harnt.DiffConfig
 ---@field approvals harnt.ApprovalsConfig
+---@field keymaps harnt.KeymapConfig
 
 ---@type harnt.Config
 local defaults = {
   diff = {},
   approvals = {},
+  keymaps = {},
 }
 
 --- The active, merged configuration.
@@ -50,6 +55,10 @@ function M.setup(opts)
       "harnt.setup: approvals.chooser must be a function"
     )
     require("harnt.services.approvals").set_chooser(merged.approvals.chooser)
+  end
+
+  if merged.keymaps.diff ~= nil then
+    require("harnt.services.diff").set_keys(merged.keymaps.diff)
   end
 
   M.options = merged

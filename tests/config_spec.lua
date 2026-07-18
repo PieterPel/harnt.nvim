@@ -14,7 +14,7 @@ end)
 
 describe("config.setup", function()
   it("returns the defaults when given nothing", function()
-    assert.same({ diff = {}, approvals = {} }, config.setup())
+    assert.same({ diff = {}, approvals = {}, keymaps = {} }, config.setup())
   end)
 
   it("wires a diff presenter into the diff service", function()
@@ -59,5 +59,15 @@ describe("config.setup", function()
     assert.has_error(function()
       config.setup({ approvals = { chooser = "x" } })
     end)
+  end)
+
+  it("wires diff keymaps into the diff service", function()
+    config.setup({ keymaps = { diff = { accept = "gA", reject = "gR" } } })
+    diff.set_presenter(nil)
+    local id = diff.open({ path = "/tmp/x", proposed = { "a" } }, function() end)
+    local win = vim.fn.win_findbuf(diff.proposed_bufnr(id))[1]
+    assert.is_truthy(vim.wo[win].winbar:find("gA"))
+    diff.reject(id)
+    diff.set_keys({ accept = "<F9>", reject = "<F10>" }) -- restore default
   end)
 end)

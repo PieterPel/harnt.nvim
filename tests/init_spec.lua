@@ -24,7 +24,7 @@ end)
 describe("harnt.setup", function()
   it("delegates to config and returns the merged options", function()
     local opts = harnt.setup({})
-    assert.same({ diff = {}, approvals = {} }, opts)
+    assert.same({ diff = {}, approvals = {}, keymaps = {} }, opts)
   end)
 end)
 

@@ -49,7 +49,18 @@ local M = {}
 local entries = {}
 local next_id = 0
 
---- Default presenter: side-by-side vimdiff in a new tabpage.
+--- Accept/reject keys shown in the winbar + bound in the diff (config-settable).
+local keys = { accept = "<F9>", reject = "<F10>" }
+
+--- Override the diff accept/reject keys (wired from user config).
+---@param opts { accept?: string, reject?: string }
+function M.set_keys(opts)
+  keys.accept = opts.accept or keys.accept
+  keys.reject = opts.reject or keys.reject
+end
+
+--- Default presenter: side-by-side vimdiff in a new tabpage, with a winbar
+--- affordance so it isn't a silent modal.
 ---@param view harnt.diff.View
 ---@return harnt.diff.Presentation
 local function default_presenter(view)
@@ -69,16 +80,21 @@ local function default_presenter(view)
     vim.cmd("diffthis")
   end)
 
-  -- Buffer-local accept/reject keymaps (PLAN §5). Resolved via M.current() at
-  -- press time, so they bind late — no ordering dependency on M.accept/reject.
+  -- Affordance: show the keys in the winbar so the diff isn't a silent modal.
+  local hint = ("  harnt diff    %s accept    %s reject "):format(keys.accept, keys.reject)
+  vim.wo[left].winbar = hint
+  vim.wo[right].winbar = hint
+
+  -- Buffer-local accept/reject keymaps (configurable). Resolved via M.current()
+  -- at press time, so they bind late — no ordering dependency on M.accept/reject.
   local function bind(buf)
-    vim.keymap.set("n", "<F9>", function()
+    vim.keymap.set("n", keys.accept, function()
       local id = M.current()
       if id then
         M.accept(id)
       end
     end, { buffer = buf, nowait = true, silent = true, desc = "harnt: accept diff" })
-    vim.keymap.set("n", "<F10>", function()
+    vim.keymap.set("n", keys.reject, function()
       local id = M.current()
       if id then
         M.reject(id)

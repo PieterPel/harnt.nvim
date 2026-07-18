@@ -122,6 +122,22 @@ describe("diff default presenter", function()
     diff.reject(id)
     assert.equals(baseline, vim.fn.tabpagenr("$"))
   end)
+
+  it("shows the configured accept/reject keys in the winbar", function()
+    diff.set_presenter(nil)
+    diff.set_keys({ accept = "<F5>", reject = "<F6>" })
+    local id = diff.open({ path = "/tmp/z.lua", proposed = { "a" } }, function() end)
+
+    local pbuf = diff.proposed_bufnr(id)
+    assert(pbuf)
+    local win = vim.fn.win_findbuf(pbuf)[1]
+    local winbar = vim.wo[win].winbar
+    assert.is_truthy(winbar:find("F5"))
+    assert.is_truthy(winbar:find("accept"))
+
+    diff.reject(id)
+    diff.set_keys({ accept = "<F9>", reject = "<F10>" }) -- restore default
+  end)
 end)
 
 describe("diff.reject_all", function()
