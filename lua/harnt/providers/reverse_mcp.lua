@@ -31,6 +31,7 @@ local M = {}
 ---@field name string provider name
 ---@field host? string bind host (default 127.0.0.1)
 ---@field port? integer bind port (default 0 = OS-assigned)
+---@field auth_header? string header the agent must send carrying the auth token
 ---@field discovery harnt.reverse_mcp.Discovery
 ---@field tools fun(ctx: harnt.SessionContext): harnt.mcp.Tool[] editor tools to expose
 ---@field server_info? { name: string, version: string }
@@ -40,12 +41,20 @@ local M = {}
 ---@class harnt.reverse_mcp.Session : harnt.Session
 ---@field info harnt.reverse_mcp.Info
 
---- Generate a non-guessable auth token for the discovery file.
+--- Generate a 32-char lowercase-hex auth token (128 bits from the OS CSPRNG when
+--- available, otherwise a hashed high-resolution fallback).
 ---@return string
 local function generate_token()
-  return vim.fn.sha256(
-    ("%d:%d:%s"):format(vim.uv.hrtime(), vim.uv.os_getpid(), tostring(os.clock()))
-  )
+  local ok, bytes = pcall(function()
+    return vim.uv.random(16)
+  end)
+  if ok and type(bytes) == "string" and #bytes == 16 then
+    return (bytes:gsub(".", function(ch)
+      return ("%02x"):format(ch:byte())
+    end))
+  end
+  local seed = ("%d:%d:%s"):format(vim.uv.hrtime(), vim.uv.os_getpid(), tostring(os.clock()))
+  return vim.fn.sha256(seed):sub(1, 32)
 end
 
 --- Start a reverse-MCP session for `config`.
@@ -57,12 +66,22 @@ function M.start(config, ctx)
   local bus = events.new()
   local auth_token = generate_token()
 
+  ---@type (fun(headers: table<string, string>): boolean)?
+  local authenticate
+  if config.auth_header then
+    local header = config.auth_header:lower()
+    authenticate = function(headers)
+      return headers[header] == auth_token
+    end
+  end
+
   ---@type table<harnt.ws.Connection, harnt.mcp.Server?>
   local servers = {}
 
   local server, err = ws.server({
     host = config.host,
     port = config.port,
+    authenticate = authenticate,
     on_open = function(client)
       -- Pure setup (no Neovim API) so it's safe in the libuv callback.
       servers[client] = mcp.server({
