@@ -1,3 +1,6 @@
+---@diagnostic disable: undefined-field
+-- (luassert extends `assert` with is_*/same/... which emmylua can't see)
+
 -- Smoke test: proves the toolchain is wired up end to end — busted runs inside
 -- Neovim (nlua) with the real API, and the plugin namespace is requireable
 -- (the minimal_init helper put lua/ on the path). This is the M0 "loop is green"
