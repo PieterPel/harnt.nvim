@@ -15,11 +15,13 @@ M.subcommands = {
   end,
 }
 
---- Configure harnt (see harnt.config).
+--- Configure harnt (see harnt.config) and register the built-in providers.
 ---@param opts? table
 ---@return harnt.Config
 function M.setup(opts)
-  return require("harnt.config").setup(opts)
+  local config = require("harnt.config").setup(opts)
+  require("harnt.providers").register(require("harnt.providers.claude"))
+  return config
 end
 
 --- Register an agent provider (see harnt.providers).
