@@ -29,6 +29,11 @@ test:
 # The full gate — exactly what CI runs.
 ci: fmt-check lint typecheck test
 
+# Real-CLI e2e smoke vs Claude (needs `claude` on PATH + a trusted cwd).
+# Nondeterministic + real API calls; deliberately NOT part of `ci`.
+e2e-claude:
+    nvim -l scripts/e2e-claude.lua
+
 # Publish the rock to luarocks.org. Needs LUAROCKS_API_KEY. Runs on tag in CI,
 # but works locally too: `LUAROCKS_API_KEY=... just publish`.
 publish:
