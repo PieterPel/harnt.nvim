@@ -69,6 +69,25 @@ local function default_presenter(view)
     vim.cmd("diffthis")
   end)
 
+  -- Buffer-local accept/reject keymaps (PLAN §5). Resolved via M.current() at
+  -- press time, so they bind late — no ordering dependency on M.accept/reject.
+  local function bind(buf)
+    vim.keymap.set("n", "<F9>", function()
+      local id = M.current()
+      if id then
+        M.accept(id)
+      end
+    end, { buffer = buf, nowait = true, silent = true, desc = "harnt: accept diff" })
+    vim.keymap.set("n", "<F10>", function()
+      local id = M.current()
+      if id then
+        M.reject(id)
+      end
+    end, { buffer = buf, nowait = true, silent = true, desc = "harnt: reject diff" })
+  end
+  bind(view.original_buf)
+  bind(view.proposed_buf)
+
   return {
     teardown = function()
       if vim.api.nvim_tabpage_is_valid(tabpage) then
@@ -185,6 +204,33 @@ function M.reject(id)
   end
   teardown(id)
   e.callback({ accepted = false })
+end
+
+--- The diff id whose original/proposal buffer is `bufnr`, if any.
+---@param bufnr integer
+---@return integer?
+function M.for_buffer(bufnr)
+  for id, entry in pairs(entries) do
+    if entry.proposed_buf == bufnr or entry.original_buf == bufnr then
+      return id
+    end
+  end
+  return nil
+end
+
+--- Resolve the "current" diff for accept/reject keymaps: the one for the current
+--- buffer, or — failing that — the sole open diff.
+---@return integer?
+function M.current()
+  local id = M.for_buffer(vim.api.nvim_get_current_buf())
+  if id then
+    return id
+  end
+  local ids = vim.tbl_keys(entries)
+  if #ids == 1 then
+    return ids[1]
+  end
+  return nil
 end
 
 --- Reject every open diff. Returns how many were closed.

@@ -23,6 +23,26 @@ M.subcommands = {
       manager.stop_all()
     end
   end,
+  --- `:Harnt accept` — accept the current diff.
+  accept = function()
+    local diff = require("harnt.services.diff")
+    local id = diff.current()
+    if id then
+      diff.accept(id)
+    else
+      vim.notify("harnt: no diff to accept", vim.log.levels.WARN)
+    end
+  end,
+  --- `:Harnt reject` — reject the current diff.
+  reject = function()
+    local diff = require("harnt.services.diff")
+    local id = diff.current()
+    if id then
+      diff.reject(id)
+    else
+      vim.notify("harnt: no diff to reject", vim.log.levels.WARN)
+    end
+  end,
   health = function()
     vim.cmd("checkhealth harnt")
   end,
