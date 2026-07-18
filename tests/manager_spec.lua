@@ -1,41 +1,75 @@
----@diagnostic disable: undefined-field, need-check-nil, return-type-mismatch
--- luassert narrowing is invisible to emmylua; session.info is on the reverse-MCP
--- subtype and the fake terminal handles are partial.
+---@diagnostic disable: undefined-field, need-check-nil, return-type-mismatch, missing-fields
+-- luassert narrowing is invisible to emmylua; synthetic providers/handles below
+-- are intentionally partial.
 
 local manager = require("harnt.manager")
 local registry = require("harnt.providers")
 
-local orig_config_dir
+local notifications
+local orig_notify
 
---- A terminal opener stub that never spawns a process.
+--- A synthetic provider so tests don't depend on a real agent being installed.
+---@param name string
+---@param opts { available?: boolean, cmd?: string[] }
+local function make_provider(name, opts)
+  return {
+    name = name,
+    cmd = opts.cmd,
+    detect = function()
+      return opts.available ~= false
+    end,
+    env = opts.cmd and function(info)
+      return { PORT = tostring(info.port) }
+    end or nil,
+    start = function()
+      return {
+        info = { host = "127.0.0.1", port = 4321, auth_token = "t", pid = 1 },
+        on = function() end,
+        respond = function() end,
+        interrupt = function() end,
+        stop = function() end,
+      }
+    end,
+  }
+end
+
 local function fake_terminal()
   return { buf = 0, win = 0, job = 0 }
 end
 
 before_each(function()
   registry.clear()
-  registry.register(require("harnt.providers.fake"))
-  registry.register(require("harnt.providers.claude"))
-  orig_config_dir = vim.env.CLAUDE_CONFIG_DIR
-  vim.env.CLAUDE_CONFIG_DIR = vim.fn.tempname()
+  notifications = {}
+  orig_notify = vim.notify
+  vim.notify = function(msg, level)
+    table.insert(notifications, { msg = msg, level = level })
+  end
 end)
 
 after_each(function()
   manager.stop_all()
   registry.clear()
-  vim.env.CLAUDE_CONFIG_DIR = orig_config_dir
+  vim.notify = orig_notify
+end)
+
+describe("manager.launch guards", function()
+  it("notifies + returns nil for an unknown provider", function()
+    assert.is_nil(manager.launch("ghost"))
+    assert.equals(vim.log.levels.ERROR, notifications[#notifications].level)
+  end)
+
+  it("notifies + returns nil for an unavailable provider", function()
+    registry.register(make_provider("off", { available = false }))
+    assert.is_nil(manager.launch("off"))
+    assert.is_truthy(notifications[#notifications].msg:find("not available"))
+  end)
 end)
 
 describe("manager.launch", function()
-  it("errors on an unknown provider", function()
-    assert.has_error(function()
-      manager.launch("ghost")
-    end)
-  end)
-
   it("launches a cmd-less provider without spawning a terminal", function()
+    registry.register(make_provider("headless", {}))
     local spawned = false
-    local inst = manager.launch("fake", {
+    local inst = manager.launch("headless", {
       open_terminal = function()
         spawned = true
         return fake_terminal()
@@ -43,33 +77,34 @@ describe("manager.launch", function()
     })
     assert.is_false(spawned)
     assert.is_nil(inst.terminal)
-    assert.is_true(vim.tbl_contains(manager.running(), "fake"))
+    assert.is_true(vim.tbl_contains(manager.running(), "headless"))
   end)
 
   it("spawns a Shape A TUI with the discovery env", function()
+    registry.register(make_provider("shapea", { cmd = { "agent" } }))
     ---@type table
     local captured
-    local inst = manager.launch("claude", {
+    local inst = manager.launch("shapea", {
       open_terminal = function(o)
         captured = o
         return fake_terminal()
       end,
     })
-    assert.same({ "claude" }, captured.cmd)
-    assert.equals(tostring(inst.session.info.port), captured.env.CLAUDE_CODE_SSE_PORT)
-    assert.equals("true", captured.env.ENABLE_IDE_INTEGRATION)
+    assert.same({ "agent" }, captured.cmd)
+    assert.equals("4321", captured.env.PORT)
     assert.is_not_nil(inst.terminal)
   end)
 
-  it("is idempotent — a second launch reuses the instance", function()
+  it("is idempotent", function()
+    registry.register(make_provider("shapea", { cmd = { "agent" } }))
     local count = 0
-    local first = manager.launch("claude", {
+    local first = manager.launch("shapea", {
       open_terminal = function()
         count = count + 1
         return fake_terminal()
       end,
     })
-    local second = manager.launch("claude", {
+    local second = manager.launch("shapea", {
       open_terminal = function()
         count = count + 1
         return fake_terminal()
@@ -81,17 +116,47 @@ describe("manager.launch", function()
 end)
 
 describe("manager.stop", function()
-  it("stops a provider and drops it from running()", function()
-    manager.launch("claude", { open_terminal = fake_terminal })
-    assert.is_true(vim.tbl_contains(manager.running(), "claude"))
-    manager.stop("claude")
-    assert.is_false(vim.tbl_contains(manager.running(), "claude"))
+  it("drops the provider from running()", function()
+    registry.register(make_provider("headless", {}))
+    manager.launch("headless", { open_terminal = fake_terminal })
+    manager.stop("headless")
+    assert.is_false(vim.tbl_contains(manager.running(), "headless"))
   end)
 
   it("stop_all stops everything", function()
-    manager.launch("fake", { open_terminal = fake_terminal })
-    manager.launch("claude", { open_terminal = fake_terminal })
+    registry.register(make_provider("a", {}))
+    registry.register(make_provider("b", {}))
+    manager.launch("a", { open_terminal = fake_terminal })
+    manager.launch("b", { open_terminal = fake_terminal })
     manager.stop_all()
     assert.same({}, manager.running())
+  end)
+end)
+
+describe("manager.toggle", function()
+  it("shows a hidden terminal, then hides it", function()
+    registry.register(make_provider("shapea", { cmd = { "agent" } }))
+    local buf = vim.api.nvim_create_buf(false, true)
+    manager.launch("shapea", {
+      open_terminal = function()
+        return { buf = buf, win = 0, job = 0 }
+      end,
+    })
+
+    assert.equals(0, #vim.fn.win_findbuf(buf))
+    manager.toggle("shapea")
+    assert.equals(1, #vim.fn.win_findbuf(buf))
+    manager.toggle("shapea")
+    assert.equals(0, #vim.fn.win_findbuf(buf))
+  end)
+end)
+
+describe("harnt.statusline", function()
+  it("is empty when idle and names running providers otherwise", function()
+    local harnt = require("harnt")
+    assert.equals("", harnt.statusline())
+    registry.register(make_provider("headless", {}))
+    manager.launch("headless", { open_terminal = fake_terminal })
+    assert.is_truthy(harnt.statusline():find("headless"))
   end)
 end)

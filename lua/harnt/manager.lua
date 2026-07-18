@@ -1,4 +1,4 @@
---- Session manager: launch / track / stop provider sessions.
+--- Session manager: launch / track / stop / toggle provider sessions.
 ---
 --- Ties a provider's session to its frontend. For a Shape A provider (a `cmd`),
 --- that means spawning the agent's own TUI in a terminal split with the session's
@@ -24,10 +24,11 @@ local instances = {}
 ---@field open_terminal? fun(opts: harnt.terminal.Opts): harnt.terminal.Handle injectable for tests
 
 --- Launch a provider by name. Idempotent: a second call returns the running
---- instance instead of starting a duplicate.
+--- instance. Returns nil (after a notification) if the provider is unknown or
+--- unavailable.
 ---@param name string
 ---@param opts? harnt.manager.LaunchOpts
----@return harnt.manager.Instance
+---@return harnt.manager.Instance?
 function M.launch(name, opts)
   opts = opts or {}
   local existing = instances[name]
@@ -36,7 +37,17 @@ function M.launch(name, opts)
   end
 
   local provider = registry.get(name)
-  assert(provider, ("harnt: unknown provider %q (call setup or register_provider)"):format(name))
+  if not provider then
+    vim.notify(("harnt: unknown provider %q"):format(name), vim.log.levels.ERROR)
+    return nil
+  end
+  if not provider.detect() then
+    vim.notify(
+      ("harnt: %q is not available — is the CLI installed and authenticated?"):format(name),
+      vim.log.levels.ERROR
+    )
+    return nil
+  end
 
   local session = provider.start(opts.ctx or {})
   ---@type harnt.manager.Instance
@@ -78,6 +89,33 @@ end
 function M.stop_all()
   for _, name in ipairs(vim.tbl_keys(instances)) do
     M.stop(name)
+  end
+end
+
+--- Toggle a provider's terminal window: launch it if not running, hide it if its
+--- window is visible, or re-show its buffer if it's hidden.
+---@param name string
+function M.toggle(name)
+  local instance = instances[name]
+  if not instance then
+    M.launch(name)
+    return
+  end
+
+  local buf = instance.terminal and instance.terminal.buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+
+  local windows = vim.fn.win_findbuf(buf)
+  if #windows > 0 then
+    for _, win in ipairs(windows) do
+      pcall(vim.api.nvim_win_close, win, false)
+    end
+  else
+    vim.cmd("botright vsplit")
+    vim.api.nvim_win_set_buf(0, buf)
+    vim.cmd("startinsert")
   end
 end
 

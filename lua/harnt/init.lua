@@ -23,6 +23,10 @@ M.subcommands = {
       manager.stop_all()
     end
   end,
+  --- `:Harnt toggle [provider]` — show/hide (or launch) a provider's TUI.
+  toggle = function(args)
+    require("harnt.manager").toggle(args[1] or "claude")
+  end,
   --- `:Harnt accept` — accept the current diff.
   accept = function()
     local diff = require("harnt.services.diff")
@@ -88,6 +92,17 @@ function M.subcommand_names()
   local names = vim.tbl_keys(M.subcommands)
   table.sort(names)
   return names
+end
+
+--- A statusline fragment naming the running providers (empty when idle). Drop
+--- into your statusline: `%{v:lua.require'harnt'.statusline()}`.
+---@return string
+function M.statusline()
+  local running = require("harnt.manager").running()
+  if #running == 0 then
+    return ""
+  end
+  return "harnt:" .. table.concat(running, ",")
 end
 
 return M

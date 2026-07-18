@@ -46,6 +46,7 @@ local builtin = {
         on_exit(code)
       end or nil,
     })
+    vim.cmd("startinsert") -- drop the user straight into the agent's TUI
     return { buf = buf, win = win, job = job }
   end,
 
