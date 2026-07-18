@@ -1,13 +1,16 @@
 --- Diff service.
 ---
---- Presents a proposed file change as a native side-by-side vimdiff (baseline on
---- the left, editable proposal on the right) and resolves to accept / reject.
---- File-level, deliberately simple (à la claudecode.nvim, not per-hunk). Accept
---- reads the *current* proposal buffer, so user edits in the diff are honored
---- ("accept with edits"), then writes via the apply service.
+--- Owns the *lifecycle* of a proposed file change — create baseline + editable
+--- proposal buffers, track them, resolve to accept/reject, and on accept write
+--- the (possibly user-edited) proposal via the apply service. File-level,
+--- deliberately simple (à la claudecode.nvim, not per-hunk).
 ---
---- The proposal buffer carries a buffer-local `harnt_diff` flag so auto-save
---- plugins can tell it apart and not silently write/accept it. Agent-agnostic.
+--- It does NOT hardcode *how* the change is shown. Presentation is a frontend
+--- concern — a Shape A minimal popup, a floating window, a new tab, or a user
+--- preference — so the presenter is injectable (mirroring approvals' chooser).
+--- The default lays the two buffers out as a side-by-side vimdiff. The proposal
+--- buffer carries a buffer-local `harnt_diff` flag so auto-save plugins leave it
+--- alone. Agent-agnostic.
 
 local apply = require("harnt.services.apply")
 
@@ -22,16 +25,70 @@ local M = {}
 ---@field accepted boolean
 ---@field content? string[] final content (possibly user-edited) when accepted
 
+--- The buffers a presenter is asked to display. The service creates and owns
+--- them; the presenter only decides layout.
+---@class harnt.diff.View
+---@field path string
+---@field original_buf integer baseline (left)
+---@field proposed_buf integer editable proposal (right)
+
+--- What a presenter returns so the service can dismiss the UI it opened.
+---@class harnt.diff.Presentation
+---@field teardown fun() close whatever windows/tabs the presenter created
+
+---@alias harnt.diff.Presenter fun(view: harnt.diff.View): harnt.diff.Presentation
+
 ---@class harnt.diff.Entry
 ---@field spec harnt.diff.Spec
 ---@field proposed_buf integer
 ---@field original_buf integer
----@field tabpage integer?
+---@field presentation harnt.diff.Presentation
 ---@field callback fun(result: harnt.diff.Result)
 
 ---@type table<integer, harnt.diff.Entry>
 local entries = {}
 local next_id = 0
+
+--- Default presenter: side-by-side vimdiff in a new tabpage.
+---@param view harnt.diff.View
+---@return harnt.diff.Presentation
+local function default_presenter(view)
+  vim.cmd("tabnew")
+  local tabpage = vim.api.nvim_get_current_tabpage()
+
+  local left = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(left, view.original_buf)
+  vim.api.nvim_win_call(left, function()
+    vim.cmd("diffthis")
+  end)
+
+  vim.cmd("vertical rightbelow split")
+  local right = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(right, view.proposed_buf)
+  vim.api.nvim_win_call(right, function()
+    vim.cmd("diffthis")
+  end)
+
+  return {
+    teardown = function()
+      if vim.api.nvim_tabpage_is_valid(tabpage) then
+        for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+          pcall(vim.api.nvim_win_close, win, true)
+        end
+      end
+    end,
+  }
+end
+
+---@type harnt.diff.Presenter
+local presenter = default_presenter
+
+--- Swap the presentation (a provider frontend, a config choice, or a test's
+--- no-op). Pass nil to restore the default side-by-side vimdiff.
+---@param fn harnt.diff.Presenter?
+function M.set_presenter(fn)
+  presenter = fn or default_presenter
+end
 
 --- Read a file's lines, or {} if it does not exist / is unreadable.
 ---@param path string
@@ -53,31 +110,7 @@ local function scratch(lines)
   return bufnr
 end
 
---- Lay out the two buffers as a side-by-side diff in a new tabpage.
----@param original_buf integer
----@param proposed_buf integer
----@return integer tabpage
-local function present(original_buf, proposed_buf)
-  vim.cmd("tabnew")
-  local tabpage = vim.api.nvim_get_current_tabpage()
-
-  local left = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(left, original_buf)
-  vim.api.nvim_win_call(left, function()
-    vim.cmd("diffthis")
-  end)
-
-  vim.cmd("vertical rightbelow split")
-  local right = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(right, proposed_buf)
-  vim.api.nvim_win_call(right, function()
-    vim.cmd("diffthis")
-  end)
-
-  return tabpage
-end
-
---- Tear down a diff's tab + scratch buffers and forget it.
+--- Dismiss a diff's presentation + scratch buffers and forget it.
 ---@param id integer
 local function teardown(id)
   local e = entries[id]
@@ -86,11 +119,7 @@ local function teardown(id)
   end
   entries[id] = nil
 
-  if e.tabpage and vim.api.nvim_tabpage_is_valid(e.tabpage) then
-    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(e.tabpage)) do
-      pcall(vim.api.nvim_win_close, win, true)
-    end
-  end
+  pcall(e.presentation.teardown)
   for _, bufnr in ipairs({ e.proposed_buf, e.original_buf }) do
     if vim.api.nvim_buf_is_valid(bufnr) then
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
@@ -106,16 +135,19 @@ function M.open(spec, callback)
   next_id = next_id + 1
   local id = next_id
 
-  local original = spec.original or read_lines(spec.path)
-  local original_buf = scratch(original)
+  local original_buf = scratch(spec.original or read_lines(spec.path))
   local proposed_buf = scratch(spec.proposed)
-  local tabpage = present(original_buf, proposed_buf)
+  local presentation = presenter({
+    path = spec.path,
+    original_buf = original_buf,
+    proposed_buf = proposed_buf,
+  })
 
   entries[id] = {
     spec = spec,
     proposed_buf = proposed_buf,
     original_buf = original_buf,
-    tabpage = tabpage,
+    presentation = presentation,
     callback = callback,
   }
   return id
