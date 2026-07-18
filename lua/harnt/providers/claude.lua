@@ -15,6 +15,9 @@ local M = {}
 
 M.name = "claude"
 
+--- Command that launches Claude's TUI (spawned in a terminal split by the manager).
+M.cmd = { "claude" }
+
 --- Header the Claude CLI sends carrying the lockfile's auth token.
 M.AUTH_HEADER = "x-claude-code-ide-authorization"
 

@@ -25,6 +25,8 @@ local M = {}
 ---@field name string unique registry key
 ---@field detect fun(): boolean CLI present + authenticated
 ---@field start fun(ctx: harnt.SessionContext): harnt.Session
+---@field cmd? string[] Shape A: command to spawn the agent's own TUI
+---@field env? fun(info: harnt.reverse_mcp.Info): table<string, string> Shape A: env for the spawned TUI
 
 ---@type table<string, harnt.Provider>
 local registry = {}

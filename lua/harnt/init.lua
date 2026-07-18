@@ -10,6 +10,19 @@ local M = {}
 --- diff-accept/…). Third parties and later milestones add entries here.
 ---@type table<string, fun(args: string[])>
 M.subcommands = {
+  --- `:Harnt open [provider]` — launch a provider (default: claude).
+  open = function(args)
+    require("harnt.manager").launch(args[1] or "claude")
+  end,
+  --- `:Harnt stop [provider]` — stop one provider, or all of them.
+  stop = function(args)
+    local manager = require("harnt.manager")
+    if args[1] then
+      manager.stop(args[1])
+    else
+      manager.stop_all()
+    end
+  end,
   health = function()
     vim.cmd("checkhealth harnt")
   end,
