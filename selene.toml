@@ -1,6 +1,10 @@
 # Lua 5.1 base + Neovim `vim` global (vim.yml) + busted/luassert test globals (busted.yml).
 std = "lua51+vim+busted"
 
+# Keep the linter to our own code: never descend into the direnv-materialized
+# flake inputs (nixpkgs et al.) or nix build outputs.
+exclude = [".direnv/**", "result/**", ".git/**"]
+
 [lints]
 # luassert extends the base `assert` with fields (assert.is_table, assert.has_no.errors,
 # …) that selene can't reconcile with lua51's `assert` function. emmylua_check still
