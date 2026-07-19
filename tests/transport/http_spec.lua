@@ -47,6 +47,33 @@ describe("http.connection", function()
     assert.equals(1, n)
   end)
 
+  it("streams a chunked response when the handler sets `stream`", function()
+    local written = {}
+    local conn = http.connection({
+      on_write = function(b)
+        written[#written + 1] = b
+      end,
+      on_request = function()
+        return {
+          status = 200,
+          headers = { ["content-type"] = "application/connect+proto" },
+          stream = function(w)
+            w.write("frame1")
+            w.write("f2")
+            w.finish()
+          end,
+        }
+      end,
+    })
+    conn:feed("POST /sub HTTP/1.1\r\nContent-Length: 0\r\n\r\n")
+    local all = table.concat(written)
+    assert.is_truthy(all:find("transfer-encoding: chunked", 1, true))
+    assert.is_falsy(all:find("content-length", 1, true))
+    assert.is_truthy(all:find("6\r\nframe1\r\n", 1, true)) -- 0x6 = 6 bytes
+    assert.is_truthy(all:find("2\r\nf2\r\n", 1, true))
+    assert.is_truthy(all:find("0\r\n\r\n", 1, true)) -- terminator
+  end)
+
   it("handles keep-alive: two requests in one stream", function()
     local paths = {}
     local conn = http.connection({

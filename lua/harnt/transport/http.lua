@@ -23,11 +23,21 @@ local M = {}
 ---@field headers table<string, string> lowercased header names → values
 ---@field body string
 
---- A response a handler returns.
+--- A response a handler returns. For a buffered (unary) response set `body`. For
+--- a server-streaming response (Connect streaming) set `stream`: it's called with
+--- a writer and may push frames over time (the response is chunked-encoded and the
+--- connection stays open until `finish()`).
 ---@class harnt.http.Response
 ---@field status integer
 ---@field headers? table<string, string>
 ---@field body? string
+---@field stream? fun(w: harnt.http.StreamWriter)
+
+--- Writer for a streaming response: `write` sends one chunk, `finish` ends the
+--- chunked body.
+---@class harnt.http.StreamWriter
+---@field write fun(bytes: string)
+---@field finish fun()
 
 --- Reason phrases for the statuses we emit.
 local REASON = {
@@ -71,6 +81,23 @@ function M.encode_response(res)
   return table.concat(lines, "\r\n")
 end
 
+--- Serialize a streaming response head (chunked, no Content-Length).
+---@param res harnt.http.Response
+---@return string
+function M.encode_stream_head(res)
+  local headers = vim.tbl_extend("keep", res.headers or {}, {
+    ["transfer-encoding"] = "chunked",
+    ["connection"] = "keep-alive",
+  })
+  local lines = { ("HTTP/1.1 %d %s"):format(res.status, REASON[res.status] or "OK") }
+  for name, value in pairs(headers) do
+    lines[#lines + 1] = ("%s: %s"):format(name, value)
+  end
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = ""
+  return table.concat(lines, "\r\n")
+end
+
 --- A connection state machine: feed bytes; it parses requests and, per request,
 --- calls `on_request(req)` and writes the returned response via `on_write`.
 ---@class harnt.http.Connection
@@ -102,7 +129,21 @@ function M.connection(opts)
     buffer = buffer:sub(body_start + len)
 
     local res = opts.on_request({ method = method, path = path, headers = headers, body = body })
-    opts.on_write(M.encode_response(res))
+    if res.stream then
+      -- Server-streaming: chunked head, then the handler pushes frames (each one
+      -- HTTP chunk) via the writer and ends the body with `finish`.
+      opts.on_write(M.encode_stream_head(res))
+      res.stream({
+        write = function(bytes)
+          opts.on_write(("%x\r\n"):format(#bytes) .. bytes .. "\r\n")
+        end,
+        finish = function()
+          opts.on_write("0\r\n\r\n")
+        end,
+      })
+    else
+      opts.on_write(M.encode_response(res))
+    end
     return true
   end
 
