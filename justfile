@@ -29,11 +29,11 @@ test:
 # The full gate — exactly what CI runs.
 ci: fmt-check lint typecheck test
 
-# Launch a clean Neovim with ONLY harnt loaded for a quick manual try
-# (:Harnt open claude). Uses -u NONE so it works with any nvim — including the
-# dev shell's bare one, which does not have your personal plugins.
+# Launch a clean Neovim with ONLY harnt loaded for a quick manual try, with
+# convenience keymaps + an on-launch help popup (see scripts/try-init.lua). Works
+# with any nvim — including the dev shell's bare one, which lacks your plugins.
 try:
-    env -u LUA_PATH -u LUA_CPATH nvim -u NONE --cmd "set rtp+={{ justfile_directory() }}" -c "runtime plugin/harnt.lua" -c "lua require('harnt').setup()"
+    env -u LUA_PATH -u LUA_CPATH nvim -u {{ justfile_directory() }}/scripts/try-init.lua
 
 # Real-CLI e2e smoke vs Claude (needs `claude` on PATH + a trusted cwd).
 # Nondeterministic + real API calls; deliberately NOT part of `ci`.
