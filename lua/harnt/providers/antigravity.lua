@@ -8,6 +8,9 @@
 --- Antigravity IDE being installed (for the LS binary) — hence built
 --- incrementally. Currently implemented: LS discovery + protobuf boot handshake.
 
+local connect = require("harnt.transport.connect")
+local events = require("harnt.events")
+local http = require("harnt.transport.http")
 local pb = require("harnt.transport.protobuf")
 
 local M = {}
@@ -222,6 +225,143 @@ function M.oauth_state_response(token)
     { no = 1, msg = kv_row(OAUTH_KEY.token_info, vim.base64.encode(token_proto)) },
   })
   return pb.encode({ { no = 1, msg = initial_state } }) -- SubscribeResponse{ initial_state=1 }
+end
+
+--- Host the ExtensionServer the LS dials (`connect+proto`). Streams the
+--- `uss-oauth` auth state (from `token`) on subscribe; empty state for other
+--- topics; unary-acks everything else. Editor-action methods (OpenDiffZones /
+--- WriteCascadeEdit → nvim diff) plug in here next.
+---@param token { access_token: string, token_type: string, refresh_token: string }?
+---@return harnt.http.Server? server, string? err
+function M.serve(token)
+  return http.server({
+    on_request = function(req)
+      if req.path:find("SubscribeToUnifiedStateSyncTopic", 1, true) then
+        local topic_frame = connect.decode(req.body)
+        local topic = topic_frame and pb.field(pb.decode(topic_frame.payload), 1)
+        local topic_name = topic and topic.bytes or ""
+        return {
+          status = 200,
+          headers = { ["content-type"] = "application/connect+proto" },
+          stream = function(w)
+            local body
+            if topic_name == "uss-oauth" and token then
+              body = M.oauth_state_response(token)
+            else
+              body = pb.encode({ { no = 1, msg = "" } }) -- empty initial_state
+            end
+            w.write(connect.encode(body))
+            -- long-lived subscription: keep the stream open (no finish()).
+          end,
+        }
+      end
+      -- Unary methods (Heartbeat, editor actions, …): connect-unary ack — an empty
+      -- message body (no envelope). Editor-action wiring is the next layer.
+      return {
+        status = 200,
+        headers = { ["content-type"] = "application/connect+proto" },
+        body = "",
+      }
+    end,
+  })
+end
+
+--- Pick a free loopback TCP port (bind :0, read, release).
+---@return integer
+local function free_port()
+  local tcp = assert(vim.uv.new_tcp())
+  tcp:bind("127.0.0.1", 0)
+  local name = tcp:getsockname()
+  tcp:close()
+  return name and name.port or 0
+end
+
+--- A short random hex token.
+---@return string
+local function rand_token()
+  local ok, bytes = pcall(vim.uv.random, 16)
+  if ok and type(bytes) == "string" then
+    return (bytes:gsub(".", function(c)
+      return ("%02x"):format(c:byte())
+    end))
+  end
+  return ("%x"):format(vim.uv.hrtime())
+end
+
+--- An Antigravity session. `info` lets the manager launch `agy` pointed at the
+--- spawned LS.
+---@class harnt.antigravity.Session : harnt.Session
+---@field info { https_port: integer, csrf: string, remote_url: string }
+
+--- Command to launch the native `agy` TUI (companion mode via env; see `env`).
+M.cmd = { "agy" }
+
+--- Env so the spawned `agy` connects to harnt's LS as the editor companion.
+--- (`any` — the session info shape is provider-specific; the manager passes it
+--- through opaquely.)
+---@param info any the antigravity session info ({ https_port, csrf })
+---@return table<string, string>
+function M.env(info)
+  return {
+    ANTIGRAVITY_CLI_ALIAS = "agy-ide",
+    ANTIGRAVITY_LS_ADDRESS = ("http://127.0.0.1:%d"):format(info.https_port),
+    ANTIGRAVITY_CSRF_TOKEN = info.csrf,
+  }
+end
+
+--- Start an Antigravity session: host the ExtensionServer, spawn the real LS
+--- (authenticated from the keychain token), and hand back the endpoint `agy`
+--- dials. The manager launches `agy` (see `cmd`/`env`).
+---@param ctx? harnt.SessionContext
+---@return harnt.antigravity.Session
+function M.start(ctx)
+  ctx = ctx or {}
+  local ls_path =
+    assert(M.find_ls(), "antigravity: language_server not found (is the IDE installed?)")
+  local bus = events.new()
+  local token = M.oauth_token() -- nil → degraded (cloud calls fail); we still boot
+
+  local ext, err = M.serve(token)
+  assert(ext, "antigravity: could not host ExtensionServer: " .. tostring(err))
+
+  local https_port, lsp_port, csrf = free_port(), free_port(), rand_token()
+  local ls = M.spawn_ls({
+    ls_path = ls_path,
+    ext_port = ext.port,
+    https_port = https_port,
+    lsp_port = lsp_port,
+    csrf = csrf,
+    ext_csrf = rand_token(),
+    metadata = M.metadata_frame({ api_key = token and token.access_token or "" }),
+    cwd = ctx.cwd,
+  })
+  vim.schedule(function()
+    bus:emit(events.TYPES.session_started, { provider = M.name })
+  end)
+
+  local stopped = false
+  ---@type harnt.antigravity.Session
+  return {
+    info = {
+      https_port = https_port,
+      csrf = csrf,
+      remote_url = ("http://127.0.0.1:%d"):format(https_port),
+    },
+    on = function(_self, event, handler)
+      return bus:on(event, handler)
+    end,
+    respond = function() end,
+    interrupt = function() end,
+    stop = function()
+      if stopped then
+        return
+      end
+      stopped = true
+      ls.stop()
+      ext.close()
+      bus:emit(events.TYPES.session_completed, { provider = M.name })
+    end,
+  }
 end
 
 --- Whether the Antigravity LS (i.e. the IDE) is available.
