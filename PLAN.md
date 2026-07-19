@@ -157,7 +157,7 @@ Shipping **two agents on two different transports** in v1 is the whole point: it
 | Fake | — | in-process | v1 (gate) |
 | **Claude** | WebSocket | IDE integration (lockfile) | v1 (gate) |
 | **Codex** | stdio proxy + ws | `app-server` + native TUI (`codex --remote`) | v1 (gate) |
-| Antigravity | local-HTTP | IDE Companion spec (MCP/HTTP) | v1.1 — reuses base |
+| Antigravity | Connect-JSON (exa LS) | reuse real `language_server` + host `ExtensionServerService` | own milestone — see `ANTIGRAVITY.md` (was wrongly "MCP/HTTP companion") |
 | Qwen | local-HTTP | Gemini/Antigravity companion spec | fast-follow |
 | ~~Gemini CLI~~ | local-HTTP | IDE companion | **dropped** — consumer access ended 2026-06-18; superseded by Antigravity CLI |
 | Cursor | ? | unknown | research spike first |
