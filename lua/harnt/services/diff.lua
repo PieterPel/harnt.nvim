@@ -36,8 +36,8 @@ local review_handler = nil
 --- them; the presenter only decides layout.
 ---@class harnt.diff.View
 ---@field path string
----@field original_buf integer baseline (left)
----@field proposed_buf integer editable proposal (right)
+---@field original_buf integer? baseline (left); absent for review-only diffs
+---@field proposed_buf integer editable proposal (right), or the patch buffer for review-only
 
 --- What a presenter returns so the service can dismiss the UI it opened.
 ---@class harnt.diff.Presentation
@@ -48,10 +48,11 @@ local review_handler = nil
 ---@class harnt.diff.Entry
 ---@field spec harnt.diff.Spec
 ---@field proposed_buf integer
----@field original_buf integer
+---@field original_buf integer?
 ---@field presentation harnt.diff.Presentation
 ---@field callback fun(result: harnt.diff.Result)
 ---@field comments { line: integer, text: string }[]
+---@field review? boolean review-only: accept resolves without writing (the agent applies)
 
 ---@type table<integer, harnt.diff.Entry>
 local entries = {}
@@ -69,6 +70,82 @@ function M.set_keys(opts)
   keys.review = opts.review or keys.review
 end
 
+--- The winbar affordance so a diff/review isn't a silent modal.
+---@return string
+local function winbar_hint()
+  return ("  harnt diff   %s accept   %s reject   %s comment   %s review "):format(
+    keys.accept,
+    keys.reject,
+    keys.comment,
+    keys.review
+  )
+end
+
+--- Run `fn(id)` for the current diff. Resolved at press time, so keymaps bind
+--- late — no ordering dependency on M.accept/reject/etc.
+---@param fn fun(id: integer)
+local function for_current(fn)
+  return function()
+    local id = M.current()
+    if id then
+      fn(id)
+    end
+  end
+end
+
+--- Bind accept/reject/review on `buf` (both diff panes / the review buffer).
+---@param buf integer
+local function bind_actions(buf)
+  local o = { buffer = buf, nowait = true, silent = true }
+  vim.keymap.set(
+    "n",
+    keys.accept,
+    for_current(M.accept),
+    vim.tbl_extend("force", o, { desc = "harnt: accept diff" })
+  )
+  vim.keymap.set(
+    "n",
+    keys.reject,
+    for_current(M.reject),
+    vim.tbl_extend("force", o, { desc = "harnt: reject diff" })
+  )
+  vim.keymap.set(
+    "n",
+    keys.review,
+    for_current(function(id)
+      (review_handler or M.reject)(id)
+    end),
+    vim.tbl_extend("force", o, { desc = "harnt: submit review" })
+  )
+end
+
+--- Bind the comment key on `buf` (the buffer whose lines carry the comments).
+---@param buf integer
+local function bind_comment(buf)
+  vim.keymap.set("n", keys.comment, function()
+    local id = M.current()
+    if not id then
+      return
+    end
+    local line = vim.api.nvim_win_get_cursor(0)[1]
+    vim.ui.input({ prompt = ("Comment L%d: "):format(line) }, function(text)
+      if text and text ~= "" then
+        M.add_comment(id, line, text)
+      end
+    end)
+  end, { buffer = buf, nowait = true, silent = true, desc = "harnt: comment on line" })
+end
+
+--- Close every window showing a tabpage we opened.
+---@param tabpage integer
+local function close_tab(tabpage)
+  if vim.api.nvim_tabpage_is_valid(tabpage) then
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+      pcall(vim.api.nvim_win_close, win, true)
+    end
+  end
+end
+
 --- Default presenter: side-by-side vimdiff in a new tabpage, with a winbar
 --- affordance so it isn't a silent modal.
 ---@param view harnt.diff.View
@@ -78,7 +155,8 @@ local function default_presenter(view)
   local tabpage = vim.api.nvim_get_current_tabpage()
 
   local left = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(left, view.original_buf)
+  local original_buf = assert(view.original_buf, "default_presenter needs an original_buf")
+  vim.api.nvim_win_set_buf(left, original_buf)
   vim.api.nvim_win_call(left, function()
     vim.cmd("diffthis")
   end)
@@ -90,80 +168,40 @@ local function default_presenter(view)
     vim.cmd("diffthis")
   end)
 
-  -- Affordance: show the keys in the winbar so the diff isn't a silent modal.
-  local hint = ("  harnt diff   %s accept   %s reject   %s comment   %s review "):format(
-    keys.accept,
-    keys.reject,
-    keys.comment,
-    keys.review
-  )
+  local hint = winbar_hint()
   vim.wo[left].winbar = hint
   vim.wo[right].winbar = hint
 
-  -- Run `fn(id)` for the current diff. Resolved at press time, so keymaps bind
-  -- late — no ordering dependency on M.accept/reject/etc.
-  ---@param fn fun(id: integer)
-  local function for_current(fn)
-    return function()
-      local id = M.current()
-      if id then
-        fn(id)
-      end
-    end
-  end
-
-  local function bind(buf)
-    local o = { buffer = buf, nowait = true, silent = true }
-    vim.keymap.set(
-      "n",
-      keys.accept,
-      for_current(M.accept),
-      vim.tbl_extend("force", o, { desc = "harnt: accept diff" })
-    )
-    vim.keymap.set(
-      "n",
-      keys.reject,
-      for_current(M.reject),
-      vim.tbl_extend("force", o, { desc = "harnt: reject diff" })
-    )
-    vim.keymap.set(
-      "n",
-      keys.review,
-      for_current(function(id)
-        (review_handler or M.reject)(id)
-      end),
-      vim.tbl_extend("force", o, { desc = "harnt: submit review" })
-    )
-  end
-  bind(view.original_buf)
-  bind(view.proposed_buf)
-
-  -- Comment on the current line — proposal pane only.
-  vim.keymap.set(
-    "n",
-    keys.comment,
-    function()
-      local id = M.current()
-      if not id then
-        return
-      end
-      local line = vim.api.nvim_win_get_cursor(0)[1]
-      vim.ui.input({ prompt = ("Comment L%d: "):format(line) }, function(text)
-        if text and text ~= "" then
-          M.add_comment(id, line, text)
-        end
-      end)
-    end,
-    { buffer = view.proposed_buf, nowait = true, silent = true, desc = "harnt: comment on line" }
-  )
+  bind_actions(original_buf)
+  bind_actions(view.proposed_buf)
+  bind_comment(view.proposed_buf)
 
   return {
     teardown = function()
-      if vim.api.nvim_tabpage_is_valid(tabpage) then
-        for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
-          pcall(vim.api.nvim_win_close, win, true)
-        end
-      end
+      close_tab(tabpage)
+    end,
+  }
+end
+
+--- Review presenter: a single `filetype=diff` window in a new tabpage. Used for
+--- pre-rendered patches (an agent that applies its own edits and only wants a
+--- verdict), where there is no editable proposal buffer to lay out side by side.
+---@param view harnt.diff.View
+---@return harnt.diff.Presentation
+local function review_presenter(view)
+  vim.cmd("tabnew")
+  local tabpage = vim.api.nvim_get_current_tabpage()
+  local win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(win, view.proposed_buf)
+  vim.bo[view.proposed_buf].filetype = "diff"
+  vim.wo[win].winbar = winbar_hint()
+
+  bind_actions(view.proposed_buf)
+  bind_comment(view.proposed_buf)
+
+  return {
+    teardown = function()
+      close_tab(tabpage)
     end,
   }
 end
@@ -171,11 +209,21 @@ end
 ---@type harnt.diff.Presenter
 local presenter = default_presenter
 
+---@type harnt.diff.Presenter
+local review_presenter_fn = review_presenter
+
 --- Swap the presentation (a provider frontend, a config choice, or a test's
 --- no-op). Pass nil to restore the default side-by-side vimdiff.
 ---@param fn harnt.diff.Presenter?
 function M.set_presenter(fn)
   presenter = fn or default_presenter
+end
+
+--- Swap the review-only presentation (single filetype=diff window). Pass nil to
+--- restore the default.
+---@param fn harnt.diff.Presenter?
+function M.set_review_presenter(fn)
+  review_presenter_fn = fn or review_presenter
 end
 
 --- Read a file's lines, or {} if it does not exist / is unreadable.
@@ -209,7 +257,8 @@ local function teardown(id)
 
   pcall(e.presentation.teardown)
   for _, bufnr in ipairs({ e.proposed_buf, e.original_buf }) do
-    if vim.api.nvim_buf_is_valid(bufnr) then
+    -- original_buf is absent for review-only diffs; guard on validity.
+    if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end
   end
@@ -242,6 +291,38 @@ function M.open(spec, callback)
   return id
 end
 
+---@class harnt.diff.ReviewSpec
+---@field path string file the change targets (for labeling)
+---@field patch string|string[] pre-rendered change (unified diff or content) shown in a filetype=diff buffer
+
+--- Open a *review-only* diff: render a pre-supplied `patch` and resolve accept/
+--- reject WITHOUT writing to disk. For agents that apply their own edits and only
+--- need a verdict (e.g. Codex over app-server, which owns the apply). Shares the
+--- comment/accept/reject/review machinery with `M.open`. `callback` fires once.
+---@param spec harnt.diff.ReviewSpec
+---@param callback fun(result: harnt.diff.Result)
+---@return integer id
+function M.open_review(spec, callback)
+  next_id = next_id + 1
+  local id = next_id
+
+  local lines = type(spec.patch) == "table" and spec.patch
+    or vim.split(spec.patch --[[@as string]], "\n", { plain = true })
+  local patch_buf = scratch(lines)
+  local presentation = review_presenter_fn({ path = spec.path, proposed_buf = patch_buf })
+
+  entries[id] = {
+    spec = { path = spec.path, proposed = lines },
+    proposed_buf = patch_buf,
+    original_buf = nil,
+    presentation = presentation,
+    callback = callback,
+    comments = {},
+    review = true,
+  }
+  return id
+end
+
 --- The proposal buffer for a diff (the one the user edits before accepting).
 ---@param id integer
 ---@return integer? bufnr
@@ -257,6 +338,12 @@ function M.accept(id)
   local e = entries[id]
   if not e then
     return false, "no such diff: " .. tostring(id)
+  end
+  -- Review-only: the agent applies its own edit; we only report the verdict.
+  if e.review then
+    teardown(id)
+    e.callback({ accepted = true })
+    return true
   end
   local content = vim.api.nvim_buf_get_lines(e.proposed_buf, 0, -1, false)
   teardown(id)

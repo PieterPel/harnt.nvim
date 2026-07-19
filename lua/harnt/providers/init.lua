@@ -37,8 +37,8 @@ local M = {}
 ---@field name string unique registry key
 ---@field detect fun(): boolean CLI present + authenticated
 ---@field start fun(ctx: harnt.SessionContext): harnt.Session
----@field cmd? string[] Shape A: command to spawn the agent's own TUI
----@field env? fun(info: harnt.reverse_mcp.Info): table<string, string> Shape A: env for the spawned TUI
+---@field cmd? string[]|fun(session: harnt.Session): string[] command to spawn the agent's own TUI; a function when it needs session info (e.g. a proxy port)
+---@field env? fun(info: harnt.reverse_mcp.Info): table<string, string> env for the spawned TUI (reverse-MCP discovery vars)
 ---@field review? fun(ctx: harnt.ReviewContext) deliver diff-review feedback the agent's native way
 ---@field on_selection? fun(session: harnt.Session) push a live selection update as the cursor moves
 ---@field on_mention? fun(session: harnt.Session) @-mention the current file/selection to the agent

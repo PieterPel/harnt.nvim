@@ -41,9 +41,9 @@ describe("diff.open", function()
       { path = "/tmp/y.lua", proposed = { "p" }, original = { "o" } },
       function() end
     )
-    assert.is_table(last_view)
+    assert(last_view, "presenter should have run")
     assert.equals("/tmp/y.lua", last_view.path)
-    assert.same({ "o" }, vim.api.nvim_buf_get_lines(last_view.original_buf, 0, -1, false))
+    assert.same({ "o" }, vim.api.nvim_buf_get_lines(assert(last_view.original_buf), 0, -1, false))
     assert.same({ "p" }, vim.api.nvim_buf_get_lines(last_view.proposed_buf, 0, -1, false))
     diff.reject(id)
   end)
@@ -202,5 +202,62 @@ describe("diff.current / diff.for_buffer", function()
     assert.is_nil(diff.current())
     diff.reject(a)
     diff.reject(b)
+  end)
+end)
+
+describe("diff.open_review (review-only)", function()
+  ---@type harnt.diff.View?
+  local review_view
+  before_each(function()
+    review_view = nil
+    diff.set_review_presenter(function(view)
+      review_view = view
+      return { teardown = function() end }
+    end)
+  end)
+  after_each(function()
+    diff.set_review_presenter(nil)
+  end)
+
+  it("renders the patch in a guarded scratch buffer", function()
+    local id = diff.open_review({ path = "/x.txt", patch = "@@ -1 +1 @@\n-a\n+b" }, function() end)
+    assert(review_view, "review presenter should have been called")
+    assert.same(
+      { "@@ -1 +1 @@", "-a", "+b" },
+      vim.api.nvim_buf_get_lines(review_view.proposed_buf, 0, -1, false)
+    )
+    assert.is_true(vim.b[review_view.proposed_buf].harnt_diff)
+    assert.equals(1, diff.open_count())
+    diff.reject(id)
+  end)
+
+  it("accept resolves accepted=true WITHOUT writing to disk (the agent applies)", function()
+    local path = vim.fn.tempname()
+    vim.fn.writefile({ "ORIGINAL" }, path)
+    local result
+    local id = diff.open_review({ path = path, patch = "+NEW" }, function(r)
+      result = r
+    end)
+    diff.accept(id)
+    assert.is_true(result.accepted)
+    -- the file on disk is untouched: review-only never calls apply
+    assert.same({ "ORIGINAL" }, vim.fn.readfile(path))
+    vim.fn.delete(path)
+  end)
+
+  it("reject resolves accepted=false", function()
+    local result
+    local id = diff.open_review({ path = "/x", patch = "+z" }, function(r)
+      result = r
+    end)
+    diff.reject(id)
+    assert.is_false(result.accepted)
+  end)
+
+  it("supports line comments on the patch buffer", function()
+    local id = diff.open_review({ path = "/x", patch = "a\nb\nc" }, function() end)
+    diff.add_comment(id, 2, "look here")
+    assert.same({ { line = 2, text = "look here" } }, diff.comments(id))
+    diff.reject(id)
   end)
 end)

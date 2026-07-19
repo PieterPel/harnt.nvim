@@ -69,13 +69,17 @@ function M.launch(name, opts)
     instance.ctx_group = group
   end
 
-  -- Shape A: run the agent's own TUI with the discovery env.
+  -- Run the agent's own TUI. `cmd` may be static (Claude) or a function of the
+  -- session (Codex needs the proxy's ws port in its `--remote` argument); `env`
+  -- carries reverse-MCP discovery vars for providers that use them.
   if provider.cmd then
-    ---@cast session harnt.reverse_mcp.Session
-    local env = provider.env and provider.env(session.info) or nil
+    local cmd = type(provider.cmd) == "function" and provider.cmd(session) or provider.cmd
+    ---@cast cmd string[]
+    local info = (session --[[@as { info: harnt.reverse_mcp.Info }]]).info
+    local env = provider.env and provider.env(info) or nil
     local open = opts.open_terminal or terminal.open
     instance.terminal = open({
-      cmd = provider.cmd,
+      cmd = cmd,
       env = env,
       on_exit = function()
         M.stop(name)
