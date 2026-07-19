@@ -215,11 +215,34 @@ with `protobuf.lua` — the transport stack works end-to-end against the real LS
   topic's current state as enveloped protobuf frames (this is where the OAuth
   token / user status is served to the LS).
 
-Remaining, concretely: (a) Connect **streaming responses** on `http.lua` (write
-enveloped frames + end-of-stream trailer, no Content-Length); (b) the state
-messages per topic — esp. the **auth/OAuth** one (still need the token: metadata
-`api_key` or safeStorage); (c) editor-action methods `OpenDiffZones` /
-`WriteCascadeEdit` → nvim diff; (d) launch `agy` at the LS + `start()` + register.
+## ✅ RESOLVED: OAuth token source + auth mechanism (the last unknowns)
+
+**Token source (no safeStorage decryption needed):** `agy` stores its token in the
+macOS **keychain**, item `service=gemini account=antigravity`, go-keyring-wrapped:
+the value is `go-keyring-base64:<base64>` and decodes to
+`{ "token": { "access_token": "ya29…", "token_type": "Bearer", "refresh_token": …,
+"expiry": … }, "auth_method": "consumer" }`. Read it with
+`security find-generic-password -s gemini -a antigravity -w` (macOS;
+`secret-tool` / go-keyring equivalents elsewhere). This is the same source `agy`
+uses ("authenticated via keyring" in its logs) — clean, no Electron `safeStorage`
+AES dance.
+
+**Auth mechanism (verified):** the stdin `Metadata` `api_key` is **ignored** for
+auth — feeding the real token there still fails. The LS obtains its OAuth token
+**only** via the **`uss-oauth`** UnifiedStateSync topic: it subscribes
+(`SubscribeToUnifiedStateSyncTopic{ topic="uss-oauth" }`) and harnt must **stream
+back the token state** as an enveloped protobuf frame. A non-streamed 200 yields
+*"state sync subscription error for topic uss-oauth: unexpected EOF"*.
+
+Remaining, concretely (bounded — all infra exists):
+1. Extract the **UnifiedStateSync response** + **`uss-oauth` state** message schemas
+   from the LS descriptors (same technique as `Metadata`); the oauth payload
+   mirrors the keychain JSON (access_token / token_type / refresh_token / expiry).
+2. Build the **ExtensionServer** in the provider (`http.lua` + `connect.lua` +
+   `protobuf.lua`): route `SubscribeToUnifiedStateSyncTopic`, and for `uss-oauth`
+   stream the token (read from the keychain) as protobuf. Ack/stub other topics.
+3. Editor-action methods `OpenDiffZones` / `WriteCascadeEdit` → `diff` service.
+4. Launch `agy` pointed at the LS + `start()` + register + verify a real turn.
 
 ## Remaining build tasks (in order) — now unblocked engineering
 
