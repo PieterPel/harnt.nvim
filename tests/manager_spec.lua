@@ -1,4 +1,4 @@
----@diagnostic disable: undefined-field, need-check-nil, return-type-mismatch, missing-fields
+---@diagnostic disable: undefined-field, need-check-nil, return-type-mismatch, missing-fields, duplicate-set-field, param-type-mismatch, call-non-callable
 -- luassert narrowing is invisible to emmylua; synthetic providers/handles below
 -- are intentionally partial.
 
@@ -152,10 +152,10 @@ describe("manager.toggle", function()
 end)
 
 describe("manager.send", function()
-  it("pushes an at_mention to running push-capable sessions", function()
-    local pushed
+  it("delegates to the provider's on_mention for running agents", function()
+    local mentioned = false
     registry.register({
-      name = "pushy",
+      name = "mentioner",
       detect = function()
         return true
       end,
@@ -165,16 +165,93 @@ describe("manager.send", function()
           respond = function() end,
           interrupt = function() end,
           stop = function() end,
-          push = function(_s, method, params)
-            pushed = { method = method, params = params }
-          end,
         }
       end,
+      on_mention = function(_session)
+        mentioned = true
+      end,
     })
-    manager.launch("pushy", { open_terminal = fake_terminal })
+    manager.launch("mentioner", { open_terminal = fake_terminal })
     manager.send()
-    assert.equals("at_mentioned", pushed.method)
-    assert.is_table(pushed.params)
+    assert.is_true(mentioned)
+  end)
+end)
+
+describe("manager.review", function()
+  it("delegates to the provider's review with reject + send_text primitives", function()
+    local diff = require("harnt.services.diff")
+    diff.set_presenter(function()
+      return { teardown = function() end }
+    end)
+
+    local reviewed = false
+    registry.register({
+      name = "reviewer",
+      detect = function()
+        return true
+      end,
+      cmd = { "agent" },
+      start = function()
+        return {
+          on = function() end,
+          respond = function() end,
+          interrupt = function() end,
+          stop = function() end,
+        }
+      end,
+      review = function(ctx)
+        reviewed = true
+        ctx.reject()
+        ctx.send_text(("feedback: %d on %s"):format(#ctx.comments, tostring(ctx.path)))
+      end,
+    })
+    manager.launch("reviewer", {
+      open_terminal = function()
+        return { buf = 0, win = 0, job = 1 }
+      end,
+    })
+
+    local sent
+    local orig = manager.send_text
+    manager.send_text = function(_name, text)
+      sent = text
+    end
+
+    local rejected = false
+    local id = diff.open({ path = "/tmp/f.lua", proposed = { "x" } }, function(r)
+      rejected = not r.accepted
+    end)
+    diff.add_comment(id, 1, "x")
+    manager.review(id)
+
+    manager.send_text = orig
+    diff.set_presenter(nil)
+
+    assert.is_true(reviewed)
+    assert.is_true(rejected)
+    assert.equals(0, diff.open_count())
+    assert.is_truthy(sent:find("feedback: 1 on /tmp/f.lua"))
+  end)
+
+  it("plain-rejects when the agent has no review capability", function()
+    local diff = require("harnt.services.diff")
+    diff.set_presenter(function()
+      return { teardown = function() end }
+    end)
+    registry.register(make_provider("plain", { cmd = { "agent" } }))
+    manager.launch("plain", {
+      open_terminal = function()
+        return { buf = 0, win = 0, job = 1 }
+      end,
+    })
+    local rejected = false
+    local id = diff.open({ path = "/x", proposed = {} }, function(r)
+      rejected = not r.accepted
+    end)
+    diff.add_comment(id, 1, "x")
+    manager.review(id)
+    diff.set_presenter(nil)
+    assert.is_true(rejected)
   end)
 end)
 

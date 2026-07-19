@@ -21,6 +21,17 @@ local M = {}
 ---@field stop fun(self: harnt.Session) end the session
 ---@field push? fun(self: harnt.Session, method: string, params: any) push an unsolicited notification to the agent (context updates); optional
 
+--- Handed to a provider's review handler: the rejected diff's comments plus
+--- primitives to deliver the feedback in whatever way is native to the agent.
+--- The generic layer supplies the primitives; the provider composes them (type
+--- prose into a TUI, send a structured protocol message, whatever fits).
+---@class harnt.ReviewContext
+---@field comments { line: integer, text: string }[]
+---@field path string?
+---@field reject fun() reject the diff (resolve it as rejected)
+---@field send_text fun(text: string) deliver free text to the agent (Shape A: type into its TUI)
+---@field session harnt.Session the live session, for protocol-native delivery
+
 --- A registered agent.
 ---@class harnt.Provider
 ---@field name string unique registry key
@@ -28,6 +39,9 @@ local M = {}
 ---@field start fun(ctx: harnt.SessionContext): harnt.Session
 ---@field cmd? string[] Shape A: command to spawn the agent's own TUI
 ---@field env? fun(info: harnt.reverse_mcp.Info): table<string, string> Shape A: env for the spawned TUI
+---@field review? fun(ctx: harnt.ReviewContext) deliver diff-review feedback the agent's native way
+---@field on_selection? fun(session: harnt.Session) push a live selection update as the cursor moves
+---@field on_mention? fun(session: harnt.Session) @-mention the current file/selection to the agent
 
 ---@type table<string, harnt.Provider>
 local registry = {}

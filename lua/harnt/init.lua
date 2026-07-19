@@ -31,6 +31,16 @@ M.subcommands = {
   send = function()
     require("harnt.manager").send()
   end,
+  --- `:Harnt review` — reject the current diff and send its comments as feedback.
+  review = function()
+    local diff = require("harnt.services.diff")
+    local id = diff.current()
+    if id then
+      require("harnt.manager").review(id)
+    else
+      vim.notify("harnt: no diff to review", vim.log.levels.WARN)
+    end
+  end,
   --- `:Harnt accept` — accept the current diff.
   accept = function()
     local diff = require("harnt.services.diff")
@@ -62,6 +72,10 @@ M.subcommands = {
 function M.setup(opts)
   local config = require("harnt.config").setup(opts)
   require("harnt.providers").register(require("harnt.providers.claude"))
+  -- Route the diff review key to the manager (reject + send comments to agents).
+  require("harnt.services.diff").set_review_handler(function(id)
+    require("harnt.manager").review(id)
+  end)
   return config
 end
 

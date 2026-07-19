@@ -1,6 +1,6 @@
 --- RFC-6455 WebSocket primitives + a minimal server.
 ---
---- Powers Claude's reverse-MCP: the editor hosts this WS server, Claude's CLI
+--- Powers WebSocket reverse-MCP: the editor hosts this server, an agent's CLI
 --- connects in and speaks JSON-RPC over text frames. This file holds the wire
 --- pieces (handshake accept-key, frame encode/decode); the TCP server is added
 --- on top. Neovim ships no SHA-1 (only sha256), so the handshake needs a small

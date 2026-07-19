@@ -207,6 +207,60 @@ function M.env(info)
   }
 end
 
+--- Claude's `selection_changed` payload (0-indexed LSP positions), from raw context.
+---@return table
+local function selection_changed_payload()
+  local cursor = context.cursor()
+  local path = vim.api.nvim_buf_get_name(0)
+  local pos = { line = cursor.row - 1, character = cursor.col }
+  return {
+    text = "",
+    filePath = path,
+    fileUrl = path ~= "" and ("file://" .. path) or "",
+    selection = { start = pos, ["end"] = pos, isEmpty = true },
+  }
+end
+
+--- Claude's `at_mentioned` payload for the current file/selection.
+---@return table
+local function at_mentioned_payload()
+  local range = context.file_range()
+  return { filePath = range.path, lineStart = range.line_start, lineEnd = range.line_end }
+end
+
+--- Push a live selection update to Claude as the cursor moves.
+---@param session harnt.Session
+function M.on_selection(session)
+  if session.push then
+    session:push("selection_changed", selection_changed_payload())
+  end
+end
+
+--- Send the current file/selection to Claude as an @-mention.
+---@param session harnt.Session
+function M.on_mention(session)
+  if session.push then
+    session:push("at_mentioned", at_mentioned_payload())
+  end
+end
+
+--- Deliver diff-review feedback Claude's way: reject the diff, then type the
+--- comments into its TUI as a follow-up prompt. Claude's openDiff is accept/reject
+--- only and its input is the terminal, so prose-into-the-TUI is the native path.
+---@param ctx harnt.ReviewContext
+function M.review(ctx)
+  ctx.reject()
+  if #ctx.comments == 0 then
+    return
+  end
+  local where = ctx.path and vim.fn.fnamemodify(ctx.path, ":~:.") or "the proposed changes"
+  local lines = { ("I rejected the changes to %s. Feedback:"):format(where) }
+  for _, comment in ipairs(ctx.comments) do
+    table.insert(lines, ("- L%d: %s"):format(comment.line, comment.text))
+  end
+  ctx.send_text(table.concat(lines, "\n"))
+end
+
 --- Whether the `claude` CLI is available.
 ---@return boolean
 function M.detect()

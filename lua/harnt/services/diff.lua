@@ -16,6 +16,13 @@ local apply = require("harnt.services.apply")
 
 local M = {}
 
+--- Extmark namespace for inline diff comments.
+local ns = vim.api.nvim_create_namespace("harnt_diff_comments")
+
+--- Frontend hook invoked when the user submits a review (see M.set_review_handler).
+---@type fun(id: integer)?
+local review_handler = nil
+
 ---@class harnt.diff.Spec
 ---@field path string absolute path the proposal targets
 ---@field proposed string[] proposed new content
@@ -44,19 +51,22 @@ local M = {}
 ---@field original_buf integer
 ---@field presentation harnt.diff.Presentation
 ---@field callback fun(result: harnt.diff.Result)
+---@field comments { line: integer, text: string }[]
 
 ---@type table<integer, harnt.diff.Entry>
 local entries = {}
 local next_id = 0
 
---- Accept/reject keys shown in the winbar + bound in the diff (config-settable).
-local keys = { accept = "<F9>", reject = "<F10>" }
+--- Keys shown in the winbar + bound in the diff (config-settable).
+local keys = { accept = "<F9>", reject = "<F10>", comment = "<leader>c", review = "<leader>R" }
 
---- Override the diff accept/reject keys (wired from user config).
----@param opts { accept?: string, reject?: string }
+--- Override the diff keys (wired from user config).
+---@param opts { accept?: string, reject?: string, comment?: string, review?: string }
 function M.set_keys(opts)
   keys.accept = opts.accept or keys.accept
   keys.reject = opts.reject or keys.reject
+  keys.comment = opts.comment or keys.comment
+  keys.review = opts.review or keys.review
 end
 
 --- Default presenter: side-by-side vimdiff in a new tabpage, with a winbar
@@ -81,28 +91,71 @@ local function default_presenter(view)
   end)
 
   -- Affordance: show the keys in the winbar so the diff isn't a silent modal.
-  local hint = ("  harnt diff    %s accept    %s reject "):format(keys.accept, keys.reject)
+  local hint = ("  harnt diff   %s accept   %s reject   %s comment   %s review "):format(
+    keys.accept,
+    keys.reject,
+    keys.comment,
+    keys.review
+  )
   vim.wo[left].winbar = hint
   vim.wo[right].winbar = hint
 
-  -- Buffer-local accept/reject keymaps (configurable). Resolved via M.current()
-  -- at press time, so they bind late — no ordering dependency on M.accept/reject.
+  -- Run `fn(id)` for the current diff. Resolved at press time, so keymaps bind
+  -- late — no ordering dependency on M.accept/reject/etc.
+  ---@param fn fun(id: integer)
+  local function for_current(fn)
+    return function()
+      local id = M.current()
+      if id then
+        fn(id)
+      end
+    end
+  end
+
   local function bind(buf)
-    vim.keymap.set("n", keys.accept, function()
-      local id = M.current()
-      if id then
-        M.accept(id)
-      end
-    end, { buffer = buf, nowait = true, silent = true, desc = "harnt: accept diff" })
-    vim.keymap.set("n", keys.reject, function()
-      local id = M.current()
-      if id then
-        M.reject(id)
-      end
-    end, { buffer = buf, nowait = true, silent = true, desc = "harnt: reject diff" })
+    local o = { buffer = buf, nowait = true, silent = true }
+    vim.keymap.set(
+      "n",
+      keys.accept,
+      for_current(M.accept),
+      vim.tbl_extend("force", o, { desc = "harnt: accept diff" })
+    )
+    vim.keymap.set(
+      "n",
+      keys.reject,
+      for_current(M.reject),
+      vim.tbl_extend("force", o, { desc = "harnt: reject diff" })
+    )
+    vim.keymap.set(
+      "n",
+      keys.review,
+      for_current(function(id)
+        (review_handler or M.reject)(id)
+      end),
+      vim.tbl_extend("force", o, { desc = "harnt: submit review" })
+    )
   end
   bind(view.original_buf)
   bind(view.proposed_buf)
+
+  -- Comment on the current line — proposal pane only.
+  vim.keymap.set(
+    "n",
+    keys.comment,
+    function()
+      local id = M.current()
+      if not id then
+        return
+      end
+      local line = vim.api.nvim_win_get_cursor(0)[1]
+      vim.ui.input({ prompt = ("Comment L%d: "):format(line) }, function(text)
+        if text and text ~= "" then
+          M.add_comment(id, line, text)
+        end
+      end)
+    end,
+    { buffer = view.proposed_buf, nowait = true, silent = true, desc = "harnt: comment on line" }
+  )
 
   return {
     teardown = function()
@@ -184,6 +237,7 @@ function M.open(spec, callback)
     original_buf = original_buf,
     presentation = presentation,
     callback = callback,
+    comments = {},
   }
   return id
 end
@@ -247,6 +301,45 @@ function M.current()
     return ids[1]
   end
   return nil
+end
+
+--- Attach an inline comment to a 1-indexed line of the proposal, shown above it.
+---@param id integer
+---@param line integer
+---@param text string
+function M.add_comment(id, line, text)
+  local entry = entries[id]
+  if not entry then
+    return
+  end
+  table.insert(entry.comments, { line = line, text = text })
+  pcall(vim.api.nvim_buf_set_extmark, entry.proposed_buf, ns, line - 1, 0, {
+    virt_lines = { { { "  💬 " .. text, "Comment" } } },
+    virt_lines_above = true,
+  })
+end
+
+--- The comments attached to a diff.
+---@param id integer
+---@return { line: integer, text: string }[]
+function M.comments(id)
+  local entry = entries[id]
+  return entry and entry.comments or {}
+end
+
+--- The file path a diff targets.
+---@param id integer
+---@return string?
+function M.target(id)
+  local entry = entries[id]
+  return entry and entry.spec.path or nil
+end
+
+--- Register the frontend handler for the review key (receives the diff id and
+--- decides how to deliver feedback). Falls back to a plain reject if unset.
+---@param fn fun(id: integer)?
+function M.set_review_handler(fn)
+  review_handler = fn
 end
 
 --- Reject every open diff. Returns how many were closed.

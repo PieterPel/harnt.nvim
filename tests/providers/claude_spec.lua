@@ -1,6 +1,6 @@
----@diagnostic disable: undefined-field, need-check-nil, inject-field
--- luassert narrowing is invisible to emmylua; a couple of tests monkeypatch the
--- diff service and set $CLAUDE_CONFIG_DIR.
+---@diagnostic disable: undefined-field, need-check-nil, inject-field, missing-fields, param-type-mismatch, call-non-callable
+-- luassert narrowing is invisible to emmylua; tests monkeypatch the diff service,
+-- set $CLAUDE_CONFIG_DIR, and pass partial session/ctx literals.
 
 local claude = require("harnt.providers.claude")
 local diff = require("harnt.services.diff")
@@ -129,6 +129,69 @@ describe("claude.tools", function()
     end)
     diff.set_presenter(nil)
     assert.equals("CLOSED_2_DIFF_TABS", text)
+  end)
+end)
+
+describe("claude context push", function()
+  it("on_selection pushes selection_changed via the session", function()
+    vim.cmd("enew")
+    local pushed
+    claude.on_selection({
+      push = function(_s, method, params)
+        pushed = { method = method, params = params }
+      end,
+    })
+    assert.equals("selection_changed", pushed.method)
+    assert.is_true(pushed.params.selection.isEmpty)
+  end)
+
+  it("on_mention pushes at_mentioned via the session", function()
+    vim.cmd("enew")
+    local pushed
+    claude.on_mention({
+      push = function(_s, method, params)
+        pushed = { method = method, params = params }
+      end,
+    })
+    assert.equals("at_mentioned", pushed.method)
+    assert.is_number(pushed.params.lineStart)
+  end)
+end)
+
+describe("claude.review", function()
+  it("rejects and formats comments as a follow-up prompt", function()
+    local rejected, sent
+    claude.review({
+      comments = { { line = 5, text = "guard" }, { line = 9, text = "loop alloc" } },
+      path = "/tmp/x.lua",
+      reject = function()
+        rejected = true
+      end,
+      send_text = function(text)
+        sent = text
+      end,
+      session = {},
+    })
+    assert.is_true(rejected)
+    assert.is_truthy(sent:find("L5: guard"))
+    assert.is_truthy(sent:find("L9: loop alloc"))
+  end)
+
+  it("with no comments just rejects", function()
+    local rejected, sent
+    claude.review({
+      comments = {},
+      path = "/x",
+      reject = function()
+        rejected = true
+      end,
+      send_text = function(text)
+        sent = text
+      end,
+      session = {},
+    })
+    assert.is_true(rejected)
+    assert.is_nil(sent)
   end)
 end)
 

@@ -6,7 +6,6 @@
 --- When the process exits, the session is torn down (server closed, lockfile
 --- removed).
 
-local context = require("harnt.services.context")
 local registry = require("harnt.providers")
 local terminal = require("harnt.terminal")
 
@@ -56,14 +55,15 @@ function M.launch(name, opts)
   local instance = { name = name, session = session }
   instances[name] = instance
 
-  -- Push editor context (selection/cursor) to the agent as it moves.
-  local push = session.push
-  if push then
+  -- Push editor context to the agent as the cursor moves — the provider decides
+  -- what to push and in what shape.
+  if provider.on_selection then
+    local on_selection = provider.on_selection
     local group = vim.api.nvim_create_augroup("harnt_ctx_" .. name, { clear = true })
     vim.api.nvim_create_autocmd({ "CursorHold", "ModeChanged" }, {
       group = group,
       callback = function()
-        push(session, "selection_changed", context.selection_payload())
+        on_selection(session)
       end,
     })
     instance.ctx_group = group
@@ -103,14 +103,67 @@ function M.stop(name)
   instance.session:stop()
 end
 
---- Push the current file + line range to every running agent as an at-mention
---- (`:Harnt send`; select first to send a range).
+--- Type `text` into a running provider's terminal and submit it (as if typed).
+---@param name string
+---@param text string
+function M.send_text(name, text)
+  local instance = instances[name]
+  if not instance or not instance.terminal then
+    return
+  end
+  local job = instance.terminal.job
+  if not job or job <= 0 then
+    return
+  end
+  vim.fn.chansend(job, text)
+  -- Submit as a separate keystroke — many TUIs treat text+CR in one write as a
+  -- pasted newline rather than Enter.
+  vim.defer_fn(function()
+    pcall(vim.fn.chansend, job, "\r")
+  end, 300)
+end
+
+--- Submit a diff review. The generic layer only gathers the comments and hands
+--- the provider primitives (reject / send_text / session); each provider decides
+--- how to deliver the feedback in its native way. With no review-capable agent,
+--- it's a plain reject.
+---@param id integer
+function M.review(id)
+  local diff = require("harnt.services.diff")
+  local reject = function()
+    diff.reject(id)
+  end
+
+  -- Deliver to a running instance. Attributing a diff to its originating session
+  -- across multiple agents is future work; today there is effectively one.
+  local names = M.running()
+  local target = names[1] and instances[names[1]] or nil
+  local provider = target and registry.get(target.name) or nil
+
+  if not (target and provider and provider.review) then
+    reject()
+    return
+  end
+
+  provider.review({
+    comments = diff.comments(id),
+    path = diff.target(id),
+    reject = reject,
+    send_text = function(text)
+      M.send_text(target.name, text)
+    end,
+    session = target.session,
+  })
+end
+
+--- Ask every running agent to @-mention the current file/selection (`:Harnt
+--- send`; select first to send a range). The provider shapes + delivers it.
 function M.send()
-  local payload = context.at_mention_payload()
   for _, name in ipairs(M.running()) do
     local instance = instances[name]
-    if instance and instance.session.push then
-      instance.session:push("at_mentioned", payload)
+    local provider = registry.get(name)
+    if instance and provider and provider.on_mention then
+      provider.on_mention(instance.session)
     end
   end
 end
