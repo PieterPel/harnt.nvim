@@ -82,8 +82,15 @@ describe("claude.tools", function()
 
     assert.equals("/b.lua", captured.spec.path)
     assert.same({ "line1", "line2" }, captured.spec.proposed)
+
+    local change_log = require("harnt.services.changes")
+    change_log.clear()
     captured.cb({ accepted = true, content = { "line1", "line2" } })
     assert.equals("FILE_SAVED", text)
+    -- the accepted change is recorded to the session change-log
+    assert.equals(1, change_log.count())
+    assert.equals("/b.lua", change_log.list()[1].path)
+    assert.equals("claude", change_log.list()[1].provider)
   end)
 
   it("openDiff reports DIFF_REJECTED on reject", function()
@@ -102,8 +109,12 @@ describe("claude.tools", function()
       end
     )
     diff.open = orig_open
+    local change_log = require("harnt.services.changes")
+    change_log.clear()
     captured.cb({ accepted = false })
     assert.equals("DIFF_REJECTED", text)
+    -- a rejected change is not recorded
+    assert.equals(0, change_log.count())
   end)
 
   it("getCurrentSelection reports success=false with no selection", function()
