@@ -234,6 +234,29 @@ auth — feeding the real token there still fails. The LS obtains its OAuth toke
 back the token state** as an enveloped protobuf frame. A non-streamed 200 yields
 *"state sync subscription error for topic uss-oauth: unexpected EOF"*.
 
+### Serve-verify loop progress (against the real LS)
+
+Built a Lua ExtensionServer (our `http`+`connect`+`protobuf`) and iterated:
+
+- **Response shape (from the IDE extension JS):** `subscribeToUnifiedStateSyncTopic`
+  is server-streaming and yields `SubscribeResponse{ oneof update_type:
+  initial_state=1 (msg) | applied_update=2 (msg) }`. Send one `initial_state`
+  frame per subscribe.
+- **Cycle 1 (empty `initial_state`):** the `uss-oauth` *"unexpected EOF"* error
+  **disappeared** — so our Connect framing + streaming + the `{initial_state=1}`
+  response structure are **correct** (verified against the real LS).
+- **Cycle 2:** error refined to *"state syncing error: **key not found**"* — so the
+  `uss-oauth` state is a **key-value store** and the LS looks up a specific key for
+  the token, which our empty state lacks.
+
+**Remaining is now an iterative KV-schema reconstruction** (not cleanly extractable
+statically — the descriptor windows are ambiguous and the JS shows the *client*
+`subscribe`, not the server value construction): determine the `initial_state`
+KV/row message shape, the oauth **key name**, and the token **value format** (JSON
+vs nested proto), by serve-verify cycles until auth succeeds. Then the same for
+`OpenDiffZones`/`WriteCascadeEdit`, then `agy` launch. Each cycle is a real
+guess→serve→read-LS-error step — bounded but multi-cycle.
+
 Remaining, concretely (bounded — all infra exists):
 1. Extract the **UnifiedStateSync response** + **`uss-oauth` state** message schemas
    from the LS descriptors (same technique as `Metadata`); the oauth payload
