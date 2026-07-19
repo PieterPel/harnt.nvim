@@ -41,6 +41,13 @@
           pkgs.neovim
           pkgs.lua51Packages.busted
           pkgs.lua51Packages.nlua
+
+          # Agent CLIs — pinned so real-CLI e2e verification (scripts/e2e-*.lua)
+          # is reproducible. We reverse-engineer each provider's wire by running
+          # the real binary against our server.
+          pkgs.claude-code
+          pkgs.codex
+          pkgs.antigravity-cli
         ];
 
         # Export VIMRUNTIME so emmylua (CLI check + LS) can resolve Neovim's Lua
