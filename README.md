@@ -39,7 +39,7 @@ protocol and strip the deep features in the process.
 |---|---|---|---|
 | Fake | — | in-process | v1 (test seam) |
 | Claude Code | WebSocket | IDE integration | v1 |
-| Codex | local-HTTP/SSE | `/ide` | v1 |
+| Codex | stdio proxy + WebSocket | app-server + native TUI | v1 |
 | Antigravity CLI | local-HTTP | IDE Companion spec | v1.1 |
 | Qwen | local-HTTP | companion spec | fast-follow |
 

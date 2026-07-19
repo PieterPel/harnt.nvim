@@ -40,6 +40,12 @@ try:
 e2e-claude:
     env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-claude.lua
 
+# Real-CLI e2e smoke vs Codex app-server proxy (needs `codex` on PATH + authed).
+# Drives one file-editing turn through the real transport + tap; asserts accept
+# writes the file. Nondeterministic + real API calls; NOT part of `ci`.
+e2e-codex:
+    env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-codex.lua
+
 # Publish the rock to luarocks.org. Needs LUAROCKS_API_KEY. Runs on tag in CI,
 # but works locally too: `LUAROCKS_API_KEY=... just publish`.
 publish:

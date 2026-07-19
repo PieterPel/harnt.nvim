@@ -101,7 +101,9 @@ end
 --- The proxy tap: decide, per upstream (app-server → client) message, whether to
 --- intercept it (file/command approval → our services) or relay it to the TUI.
 --- Notifications carrying `fileChange` items are captured for v2 diff correlation
---- and still relayed. Pure; the only state is the itemId→changes cache.
+--- and still relayed. We do NOT touch the TUI's own requests — codex runs under
+--- its own approval policy, and we surface a diff/approval only when it asks.
+--- Pure; the only state is the itemId→changes cache.
 ---@param io harnt.codex.RouterIO
 ---@return { feed_upstream: fun(obj: any, raw: string) }
 function M._router(io)
