@@ -199,6 +199,28 @@ the protobuf frame, closes stdin) → the LS listens on the fixed `--https_serve
 So the hardest research step is done *and* implemented in the plugin. Not yet
 registered (no `start()` until the ExtensionServer host exists).
 
+## ✅ CAPTURED + validated: the ExtensionServer handshake
+
+Booted the real LS pointed at harnt's own `http.lua` server and decoded its calls
+with `protobuf.lua` — the transport stack works end-to-end against the real LS:
+
+- First calls: **`POST /exa.extension_server_pb.ExtensionServerService/SubscribeToUnifiedStateSyncTopic`**
+  (server-streaming), `content-type: application/connect+proto`. Topics seen:
+  `uss-agentPreferences`, `uss-browserPreferences` (more likely incl. auth/user
+  status).
+- **Connect framing:** each message is `[1 flag byte][4-byte BE length][protobuf]`
+  (the 5-byte gRPC/Connect envelope). Request body decodes (after `+5`) to
+  `{ field 1 (string) = "<topic>" }`.
+- harnt must answer each subscribe with a **server-streaming** response: push the
+  topic's current state as enveloped protobuf frames (this is where the OAuth
+  token / user status is served to the LS).
+
+Remaining, concretely: (a) Connect **streaming responses** on `http.lua` (write
+enveloped frames + end-of-stream trailer, no Content-Length); (b) the state
+messages per topic — esp. the **auth/OAuth** one (still need the token: metadata
+`api_key` or safeStorage); (c) editor-action methods `OpenDiffZones` /
+`WriteCascadeEdit` → nvim diff; (d) launch `agy` at the LS + `start()` + register.
+
 ## Remaining build tasks (in order) — now unblocked engineering
 
 1. **Metadata proto field numbers.** Only in the minified protobuf-es descriptor
