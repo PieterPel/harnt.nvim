@@ -61,16 +61,23 @@ Three layers. The bottom two are shared across every provider; only the adapter 
 │   context · diff · approvals · apply/reload                  │
 ├─────────────────────────────────────────────────────────────┤
 │  Transport primitives                                        │
-│   jsonrpc codec · ws server · local-http/SSE server          │
+│   jsonrpc · ws · mcp · stdio · filetail · protobuf · http(Connect) │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### 1.1 Transport primitives (`lua/harnt/transport/`)
-- `jsonrpc.lua` — JSON-RPC 2.0 codec: request/response id-correlation + notification dispatch. Transport-agnostic; used by every adapter. Built on `vim.json` + `vim.uv`.
-- `ws.lua` — RFC-6455 server (lift/borrow claudecode.nvim's implementation). Powers Claude's IDE integration.
-- `http.lua` — local streamable-HTTP / SSE MCP server, listen on port 0. Powers Codex `/ide` and the Gemini companion.
+Each agent's reverse channel needed a different wire; the primitives are those wires,
+all pure Lua on `vim.uv`. What actually shipped (diverges from the original plan —
+kept honest):
+- `jsonrpc.lua` — JSON-RPC 2.0 codec (id-correlation + notification dispatch). Under Claude's MCP.
+- `ws.lua` — RFC-6455 WebSocket server. Powers **Claude**'s IDE integration.
+- `mcp.lua` — MCP server (initialize / tools/list / tools/call) over `jsonrpc`. Claude's editor tools.
+- `stdio.lua` — child-process newline-JSON transport. Powers the **Codex** app-server proxy.
+- `filetail.lua` — append-only file tail (uv timer + line buffer). Reads **Claude**'s PostToolUse hook output.
+- `protobuf.lua` — minimal protobuf wire codec (pure Lua). For **Antigravity**'s language-server (stdin `Metadata` frame + the `connect+proto` ExtensionServer channel).
+- `http.lua` — *(being built)* local HTTP server + a **Connect** (`connect+proto`) layer. Hosts **Antigravity**'s `ExtensionServerService` (the editor-side callbacks the exa language-server dials). No longer "Codex/Gemini SSE" — that premise was wrong (see CODEX.md / ANTIGRAVITY.md).
 
-**Deliberate stance:** pure Lua, in-process, on `vim.uv`. No mandatory Node/Bun runtime, no mandatory daemon. (See `BET.md` bet #4.)
+**Deliberate stance:** pure Lua, in-process, on `vim.uv`. No mandatory Node/Bun runtime, no mandatory daemon (BET.md #4). The one *optional* exception under consideration is `starwing/lua-protobuf` (C) for the Antigravity provider only, if the hand-rolled `protobuf.lua` proves unmaintainable — core stays pure Lua.
 
 ### 1.2 Editor services (`lua/harnt/services/`) — the crown jewels
 These read/write Neovim and know **nothing** about any agent. They are the real shared value, and they are identical for every provider.
@@ -183,7 +190,7 @@ Order matters. Fake provider exists early so services work proceeds without real
   native TUI renders the chat untouched.** (Was: `http` transport + `/ide` config
   table — wrong premise; see Correction note + `CODEX.md`.)
 - [ ] **M4 — Registry + passthrough + unified UX.** Provider registry API, `payload.provider` passthrough, `HarntEvent` autocmd, unified `:Harnt*` commands and keymaps, docs.
-- [ ] **M5 — Fast-follow adapters.** Antigravity and Qwen, each a thin table on the existing base — the proof that the base pays off.
+- [ ] **M5 — Antigravity (NOT a thin table — the hard one).** Reverse-engineering (done, see `ANTIGRAVITY.md`) showed Antigravity is the Windsurf/Codeium `exa` language-server, not an `/ide`-style callback: harnt spawns the real `language_server` (protobuf `Metadata` stdin boot — *done + verified in Lua*) and must host its `ExtensionServerService` over `connect+proto` (a `transport/http.lua` Connect server + protobuf messages) to route diffs/auth. This is the biggest provider and its own build, not a config table — the honest counter-example to "every adapter is a table." Qwen (companion-spec) remains the fast-follow that tests the table hypothesis.
 - [ ] **M6 — (Optional) persistence.** State file or lightweight SQLite for session listing/resume, strictly opt-in. No mandatory daemon. Cross-instance attach only if it stays in-process-friendly.
 - [ ] **M7 — Release gating.** See §6.
 
