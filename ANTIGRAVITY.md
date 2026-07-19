@@ -126,7 +126,30 @@ So the stdin bootstrap is **binary protobuf** (not JSON) and **carries the cloud
 OAuth token**. The LS's *HTTP* API is Connect-JSON, but this one bootstrap frame
 is protobuf.
 
-## Remaining build tasks (in order) — this is a multi-session effort
+## ✅ BREAKTHROUGH (2026-07-19): the LS boots under harnt
+
+The hard research step is **solved and verified**. harnt can spawn + boot the real
+`language_server` itself:
+
+- **`Metadata` field numbers** (decoded from the LS binary's embedded
+  `FieldDescriptorProto`s): `ide_name=1, api_key=3 (OAuth token), locale=4,
+  disable_telemetry=6 (bool), ide_version=7, extension_name=12, extension_path=17,
+  device_fingerprint=24 (installation id), user_tier_id=29`. A flat string/bool
+  message → trivial to hand-encode in Lua.
+- **stdin framing = raw protobuf, EOF-delimited** (write the serialized message,
+  then close stdin). No length prefix.
+- **Verified:** hand-encoding that message (dummy `api_key`) + writing it to the
+  LS's stdin gets it **past** *"Failed to read initial metadata from stdin"* and it
+  boots. The dummy token is fine to boot — auth is lazy (only cloud/AI calls need
+  a real token).
+- **Ports are fixable:** `--https_server_port <P> --lsp_port <Q>` (or env
+  `JETSKI_FIXED_SERVER_PORT`/`JETSKI_FIXED_LSP_PORT`) → the LS listens exactly
+  there. So **agy discovery is trivial** — harnt fixes the port and points agy at
+  it. Verified: with `--https_server_port 8899` the LS listens on 8899.
+
+So there are **no deep protocol unknowns left** — the rest is engineering.
+
+## Remaining build tasks (in order) — now unblocked engineering
 
 1. **Metadata proto field numbers.** Only in the minified protobuf-es descriptor
    / the LS binary's embedded FileDescriptorProtos. Decode one of those (base64
