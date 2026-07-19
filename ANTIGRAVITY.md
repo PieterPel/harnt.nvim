@@ -94,6 +94,59 @@ editor methods + streaming, plus spawning/managing the real LS, plus confirming
 discovery — a milestone, not a table. Feasible (Connect-JSON = pure Lua), but
 disproportionate to bolt onto other work. Recommended: dedicated milestone.
 
+## Deep dive: the LS boot handshake (2026-07-19, from the IDE extension JS)
+
+Read from `…/extensions/antigravity/dist/extension.js` (readable, unlike agy).
+The IDE spawns the LS like:
+
+```
+language_server_macos_arm --enable_lsp \
+  --csrf_token <random>                      # token CLIENTS present to the LS
+  --extension_server_port <P>                # the LS DIALS this (editor actions)
+  --extension_server_csrf_token <tok>        # token the LS presents to us
+  [--https_server_port <hp> --lsp_port <lp>] # settable; also via env
+                                             #   JETSKI_FIXED_SERVER_PORT / JETSKI_FIXED_LSP_PORT
+  --app_data_dir antigravity-ide --subclient_type ide \
+  --cloud_code_endpoint https://cloudcode-pa.googleapis.com
+# env: { ...process.env, ...languageServerEnv, ANTIGRAVITY_EDITOR_APP_ROOT }
+```
+
+**Then it writes a binary protobuf `Metadata` message to the LS's stdin and
+closes it** (`child.stdin.write(le); child.stdin.end()`). Without it the LS dies
+with *"Failed to read initial metadata from stdin"* (verified). Fields:
+
+```
+Metadata{ ideName, ideVersion, extensionName, extensionPath, locale,
+          deviceFingerprint = <installation id>,
+          apiKey            = OAuthPreferences.getOAuthTokenInfo().accessToken,
+          disableTelemetry, userTierId }
+```
+
+So the stdin bootstrap is **binary protobuf** (not JSON) and **carries the cloud
+OAuth token**. The LS's *HTTP* API is Connect-JSON, but this one bootstrap frame
+is protobuf.
+
+## Remaining build tasks (in order) — this is a multi-session effort
+
+1. **Metadata proto field numbers.** Only in the minified protobuf-es descriptor
+   / the LS binary's embedded FileDescriptorProtos. Decode one of those (base64
+   `fileDesc(...)` in extension.js, or protodump the Go binary) to get the
+   `Metadata` message's field numbers + types. Needed to encode the stdin frame.
+2. **stdin framing.** Confirm how `le` is delimited (length-prefix format) before
+   the protobuf bytes.
+3. **OAuth token extraction.** Read `getOAuthTokenInfo().accessToken` from the
+   `~/.gemini` unified-state store (find the exact file/format). Needed for the
+   Metadata frame. (Security: handle the user's token carefully.)
+4. **Spawn + boot** the LS with args + env + the hand-encoded stdin metadata;
+   confirm it starts and dials our `--extension_server_port`.
+5. **Connect-JSON `ExtensionServerService`** (streaming) wired to context/diff/
+   apply — the subset the LS calls.
+6. **agy launch + LS discovery** — point companion `agy` at our LS.
+
+Each of 1–3 is its own RE step (protobuf descriptor decoding, token store format).
+Feasible, but genuinely a dedicated build — and it hard-depends on the Antigravity
+IDE being installed (for the LS binary) plus a live OAuth session.
+
 ## Verification assets
 
 - `scratchpad/agy_capture.py` — logging server used to probe what agy dials.
