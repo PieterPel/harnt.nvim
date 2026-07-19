@@ -234,6 +234,34 @@ auth — feeding the real token there still fails. The LS obtains its OAuth toke
 back the token state** as an enveloped protobuf frame. A non-streamed 200 yields
 *"state sync subscription error for topic uss-oauth: unexpected EOF"*.
 
+## ⚠️ PIVOTAL (2026-07-19): terminal `agy` runs standalone — the LS is the IDE *sidebar's*
+
+End-to-end test (`antigravity.start()` hosts the ExtensionServer + spawns the
+authed LS; launch `agy` in companion env pointed at it): **`agy` ignored harnt's
+LS.** It authenticated on its own (keyring), edited in its **own default scratch
+workspace** (not the session cwd), and behaved exactly like standalone `agy -p`.
+`ANTIGRAVITY_LS_ADDRESS` didn't wire it in (the real IDE terminal also lacks that
+env), and `--persistent_mode` wrote no discovery file `agy` consumed.
+
+**What's confirmed vs open.** Confirmed: with that env setup, terminal `agy` ran
+standalone. **Open (honestly):** my connect attempt may have been *misconfigured*
+— I pointed `agy` at `http://` on the LS's `--https_server_port` (likely TLS) via
+env discovery, and `agy` falls back to standalone when it can't reach an LS. So
+this does **not** yet prove terminal `agy` *can't* be a companion — only that this
+attempt didn't wire it in. Two live paths:
+
+- **(a) Debug the agy↔LS connection** — right port (there's also `--http_server_port`;
+  the LS opens many ports) + protocol (http vs https) + discovery (how `agy` finds
+  the LS when `ANTIGRAVITY_CLI_ALIAS=agy-ide`; not the env we tried). Auth is
+  already cracked, so if terminal `agy` *can* be a companion, this unlocks the full
+  integration.
+- **(b) Shape A + hooks** — if terminal `agy` is fundamentally standalone (like
+  terminal Codex), mirror the **Claude hook** path: native `agy` TUI in a split +
+  a `PostToolUse` hook → change-log. `agy` has Claude-compatible hooks
+  (`PreToolUse`/`PostToolUse`; `agy plugin import from gemini|claude`). Quick, sure.
+
+The LS-hosting work below stands as a real reverse-engineering result regardless.
+
 ## ✅✅ AUTH CRACKED (serve-verify loop, 6 cycles) — the LS authenticates under harnt
 
 Serving the `uss-oauth` UnifiedStateSync subscription with the following makes the
