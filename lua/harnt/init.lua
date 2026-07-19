@@ -61,6 +61,10 @@ M.subcommands = {
       vim.notify("harnt: no diff to reject", vim.log.levels.WARN)
     end
   end,
+  --- `:Harnt changes` — pick a recorded agent change to view (read-only).
+  changes = function()
+    require("harnt.services.changes").pick()
+  end,
   health = function()
     vim.cmd("checkhealth harnt")
   end,

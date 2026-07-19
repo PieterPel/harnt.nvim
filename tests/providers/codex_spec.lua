@@ -17,7 +17,8 @@ describe("codex provider", function()
   describe("proxy tap (_router)", function()
     --- Build a router wired to recording fakes.
     local function harness()
-      local cap = { sent = {}, forwarded = {}, reviews = {}, cmds = {}, emitted = {} }
+      local cap =
+        { sent = {}, forwarded = {}, reviews = {}, cmds = {}, recorded = {}, emitted = {} }
       local router = codex._router({
         send_upstream = function(obj)
           table.insert(cap.sent, obj)
@@ -30,6 +31,9 @@ describe("codex provider", function()
         end,
         request_command = function(params, resolve)
           table.insert(cap.cmds, { params = params, resolve = resolve })
+        end,
+        record_change = function(change)
+          table.insert(cap.recorded, change)
         end,
         emit = function(ev, p)
           table.insert(cap.emitted, { ev = ev, p = p })
@@ -133,6 +137,23 @@ describe("codex provider", function()
       local r, cap = harness()
       r.feed_upstream({ id = 3, result = { thread = { id = "t1" } } }, "RAW_RESP")
       assert.same({ "RAW_RESP" }, cap.forwarded)
+    end)
+
+    it("records a change to the log when its fileChange item completes", function()
+      local r, cap = harness()
+      local item = {
+        type = "fileChange",
+        id = "exec1",
+        changes = { { path = "/z.txt", kind = { type = "update" }, diff = "@@\n-a\n+b\n" } },
+      }
+      -- started: captured for correlation, but NOT recorded yet
+      r.feed_upstream({ method = "item/started", params = { item = item } }, "RAW_S")
+      assert.equals(0, #cap.recorded)
+      -- completed: recorded for on-demand review
+      r.feed_upstream({ method = "item/completed", params = { item = item } }, "RAW_C")
+      assert.equals(1, #cap.recorded)
+      assert.equals("/z.txt", cap.recorded[1].path)
+      assert.equals("update", cap.recorded[1].kind)
     end)
   end)
 end)

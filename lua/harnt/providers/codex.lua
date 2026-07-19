@@ -18,6 +18,7 @@
 --- shapes) lives in THIS file; the generic layers stay agent-agnostic.
 
 local approvals = require("harnt.services.approvals")
+local change_log = require("harnt.services.changes")
 local diff = require("harnt.services.diff")
 local events = require("harnt.events")
 local stdio = require("harnt.transport.stdio")
@@ -96,6 +97,7 @@ end
 ---@field forward_to_tui fun(raw: string) relay a raw frame to the native TUI
 ---@field open_review fun(changes: harnt.codex.Change[], resolve: fun(accepted: boolean)) show a diff, resolve on verdict
 ---@field request_command fun(params: table, resolve: fun(allowed: boolean)) prompt a command approval
+---@field record_change fun(change: harnt.codex.Change) log a completed change for on-demand review
 ---@field emit fun(event: string, payload: table)
 
 --- The proxy tap: decide, per upstream (app-server → client) message, whether to
@@ -132,6 +134,14 @@ function M._router(io)
       local item = obj.params and obj.params.item
       if type(item) == "table" and item.type == "fileChange" and item.changes then
         changes_by_item[item.id] = item.changes
+        -- On completion, log the change for on-demand review — this happens for
+        -- EVERY edit (approved or auto-applied), so you can always see what the
+        -- agent did without us gating its flow.
+        if method == "item/completed" then
+          for _, c in ipairs(normalize_changes({}, item.changes)) do
+            io.record_change(c)
+          end
+        end
       end
       io.forward_to_tui(raw)
       return
@@ -208,10 +218,10 @@ function M.start(ctx)
         tui:send(raw)
       end
     end,
-    open_review = function(changes, resolve)
-      local path = (changes[1] and changes[1].path) or "(codex change)"
-      bus:emit(events.TYPES.diff_ready, { provider = { changes = changes }, path = path })
-      diff.open_review({ path = path, patch = render_patch(changes) }, function(result)
+    open_review = function(file_changes, resolve)
+      local path = (file_changes[1] and file_changes[1].path) or "(codex change)"
+      bus:emit(events.TYPES.diff_ready, { provider = { changes = file_changes }, path = path })
+      diff.open_review({ path = path, patch = render_patch(file_changes) }, function(result)
         resolve(result.accepted)
       end)
     end,
@@ -223,6 +233,14 @@ function M.start(ctx)
       }, function(allowed)
         resolve(allowed)
       end)
+    end,
+    record_change = function(change)
+      change_log.record({
+        path = change.path,
+        kind = change.kind,
+        diff = change.diff,
+        provider = M.name,
+      })
     end,
     emit = function(event, payload)
       bus:emit(event, payload)
