@@ -149,6 +149,56 @@ The hard research step is **solved and verified**. harnt can spawn + boot the re
 
 So there are **no deep protocol unknowns left** — the rest is engineering.
 
+### ⚠️ Correction: the ExtensionServer channel is binary `connect+proto`, not JSON
+
+Live test (harnt-spawned LS + dummy ExtensionServer) produced:
+
+```
+Failed to get OAuth token: … invalid content-type: "application/json";
+expecting "application/connect+proto"
+```
+
+So two things, both raising the cost:
+1. **The LS fetches its OAuth token *from* the ExtensionServer** via UnifiedStateSync
+   — harnt-as-editor must *serve* the token to the LS (so booting isn't enough;
+   auth flows through the ExtensionServer we host).
+2. **The LS↔ExtensionServer client is hardwired to `application/connect+proto`**
+   (binary protobuf), *not* JSON — my earlier "Connect-JSON, pure Lua" read was
+   wrong (the LS binary *advertises* JSON, but its ExtensionServer client uses
+   proto). So harnt must hand-implement **binary protobuf** encode/decode for the
+   ExtensionServer messages (UnifiedStateSync + OAuth state, OpenDiffZones,
+   WriteCascadeEdit, GetLintErrors, …) — dozens of nested messages, no protobuf
+   library in Neovim. This is the real remaining hard layer, larger than hoped.
+
+Net: **booting the LS is solved; hosting the ExtensionServer in binary
+connect+proto (incl. serving auth via UnifiedStateSync) is a substantial pure-Lua
+protobuf build.** That, not the boot, is the true bulk of the work — a dedicated
+milestone with its own protobuf-codec + schema-extraction effort.
+
+### OAuth token: served via the ExtensionServer, not the keychain (probably)
+
+The token lives in **Electron `safeStorage`** (keychain item *"Antigravity Safe
+Storage"* = the AES key; a `gemini/antigravity` keychain account) — encrypted, the
+standard Chromium pattern. Decrypting a user's OAuth token is sensitive and fiddly.
+
+**But the boot test showed a dummy `api_key` boots the LS fine** (auth is lazy).
+The open question that decides everything: when the **already-authed `agy`**
+connects to a harnt-spawned LS in companion mode, does *agy* supply the real auth
+(so harnt never touches the token), or does the LS need its own token in the
+metadata? **Test this before building any token extraction** — boot the LS with a
+dummy token on a fixed port, launch `agy` (companion env) pointed at it, run one
+edit turn, and see if it works. If agy provides auth, the whole credential problem
+disappears.
+
+## ✅ SHIPPED (pure Lua, verified): boot handshake
+
+`lua/harnt/transport/protobuf.lua` (minimal wire codec) + `providers/antigravity.lua`
+(`find_ls` / `metadata_frame` / `spawn_ls`) now boot the **real** language_server
+from Lua: verified `find_ls` → `metadata_frame` (our codec) → `spawn_ls` (writes
+the protobuf frame, closes stdin) → the LS listens on the fixed `--https_server_port`.
+So the hardest research step is done *and* implemented in the plugin. Not yet
+registered (no `start()` until the ExtensionServer host exists).
+
 ## Remaining build tasks (in order) — now unblocked engineering
 
 1. **Metadata proto field numbers.** Only in the minified protobuf-es descriptor
