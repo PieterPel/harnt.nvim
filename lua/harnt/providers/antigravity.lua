@@ -148,6 +148,82 @@ function M.spawn_ls(opts)
   }
 end
 
+-- === ExtensionServer: UnifiedStateSync / OAuth ===================================
+-- The LS authenticates by subscribing to the `uss-oauth` state topic and reading
+-- two keys; harnt serves them (token from the keychain). Verified via serve-verify
+-- against the real LS — see ANTIGRAVITY.md "AUTH CRACKED".
+
+--- uss-oauth state keys the LS reads (verified).
+local OAUTH_KEY = {
+  auth_state = "authStateWithContextSentinelKey", -- value: plain JSON {state, context}
+  token_info = "oauthTokenInfoSentinelKey", -- value: base64(protobuf OAuthTokenInfo)
+}
+
+--- `OAuthTokenInfo` protobuf field numbers (decoded from the LS descriptors).
+local OAUTH_TOKEN_INFO = { access_token = 1, token_type = 2, refresh_token = 3 }
+
+--- Read agy's OAuth token from the OS keychain (same source agy uses — its logs
+--- say "authenticated via keyring"). Returns nil if unavailable.
+---@return { access_token: string, token_type: string, refresh_token: string }?
+function M.oauth_token()
+  -- macOS keychain via go-keyring (service=gemini account=antigravity); the value
+  -- is `go-keyring-base64:<base64 JSON>`.
+  local out = vim.fn.system({
+    "security",
+    "find-generic-password",
+    "-s",
+    "gemini",
+    "-a",
+    "antigravity",
+    "-w",
+  })
+  if vim.v.shell_error ~= 0 then
+    return nil
+  end
+  local b64 = (out:gsub("%s+$", "")):gsub("^go%-keyring%-base64:", "")
+  local ok, obj = pcall(function()
+    return vim.json.decode(vim.base64.decode(b64))
+  end)
+  if not ok or type(obj) ~= "table" or type(obj.token) ~= "table" then
+    return nil
+  end
+  return {
+    access_token = obj.token.access_token or "",
+    token_type = obj.token.token_type or "Bearer",
+    refresh_token = obj.token.refresh_token or "",
+  }
+end
+
+--- Build one UnifiedStateSync KV row: `{ #1 key, #2 value{ #1 payload } }`.
+---@param key string
+---@param payload string the value string (plain JSON or base64(proto), per key)
+---@return string encoded row message
+local function kv_row(key, payload)
+  local value_msg = pb.encode({ { no = 1, str = payload } })
+  return pb.encode({ { no = 1, str = key }, { no = 2, msg = value_msg } })
+end
+
+--- Build the `uss-oauth` subscribe response (one `initial_state` frame body) that
+--- authenticates the LS: signed-in auth-state + the base64(protobuf) token info.
+---@param token { access_token: string, token_type: string, refresh_token: string }
+---@return string subscribe_response encoded SubscribeResponse{ initial_state }
+function M.oauth_state_response(token)
+  local auth_json = vim.json.encode({
+    state = "signedIn",
+    context = { project = "", showProjectError = false, errorMessage = "" },
+  })
+  local token_proto = pb.encode({
+    { no = OAUTH_TOKEN_INFO.access_token, str = token.access_token },
+    { no = OAUTH_TOKEN_INFO.token_type, str = token.token_type },
+    { no = OAUTH_TOKEN_INFO.refresh_token, str = token.refresh_token },
+  })
+  local initial_state = pb.encode({
+    { no = 1, msg = kv_row(OAUTH_KEY.auth_state, auth_json) },
+    { no = 1, msg = kv_row(OAUTH_KEY.token_info, vim.base64.encode(token_proto)) },
+  })
+  return pb.encode({ { no = 1, msg = initial_state } }) -- SubscribeResponse{ initial_state=1 }
+end
+
 --- Whether the Antigravity LS (i.e. the IDE) is available.
 ---@return boolean
 function M.detect()
