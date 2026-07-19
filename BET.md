@@ -40,7 +40,20 @@ Each bet is falsifiable. If the "wrong if" comes true, we should know and adjust
 
 ### Bet 0 — Agents will keep offering (and improving) an `/ide`-style reverse mode
 
-This is the load-bearing bet, so it goes first. Our whole architecture assumes the agent runs its **own** TUI and reaches back into the editor over a reverse-MCP / IDE-callback channel — Claude's IDE integration, Codex's `/ide`, Gemini's companion. We do not drive agents headless and we do not render their chat.
+This is the load-bearing bet, so it goes first. Our whole architecture assumes the agent runs its **own** TUI and reaches back into the editor over a reverse channel — Claude's IDE integration, Codex's app-server, Gemini's companion. We do not render their chat.
+
+> **Refinement (2026-07-19), from reverse-engineering real Codex.** The reverse
+> channel is *not* always an `/ide`-style callback where the agent calls into a
+> server we host. Codex taught us a second, equally valid shape: the agent's
+> **native TUI talks to an app-server**, and we sit in the middle as a **proxy**,
+> tapping the stream for the editor-shaped events (diffs, approvals). So the bet is
+> really: *agents keep shipping a native-TUI mode whose editor-facing traffic we
+> can host or tap* — broader than "`/ide` callback," and Codex is the proof. Note
+> the sharpened line: "we do not render their chat" is the invariant; "we do not
+> run any headless process" is **not** — harnt runs `codex app-server` purely as
+> the wire while Codex's own TUI renders the chat. Driving a headless engine is
+> fine; *rendering the agent's chat ourselves* is the thing we refuse. (Codex's
+> `/ide` unix socket does exist but is context-only — see `CODEX.md`.)
 
 - **Right if:** the major agents keep shipping a native-TUI-plus-editor-callback mode, and new agents adopt it (the direction of travel — Claude, Codex, Antigravity (née Gemini CLI), Qwen all have it; Codex is actively making its `/ide` *more* automatic, citing Claude Code as the bar; and Google carried the Gemini CLI IDE Companion spec forward into Antigravity CLI rather than dropping it).
 - **Wrong if:** a genuinely popular agent ships **headless-only** (ACP/app-server as its *only* editor surface) and never adds a callback mode. That agent we structurally cannot host — see the non-goal below. If that becomes the norm rather than the exception, the bet is lost and the editor-drives-and-renders crowd was right.
@@ -97,4 +110,4 @@ Like `nvim-dap` and `conform.nvim`, the tool that lets third parties add an agen
 - **Bet 3 is wrong:** the agents' reverse modes differ so much that "shared services" is a mirage and every adapter needs its own UI after all.
 - A vendor ships a genuinely good universal *lossless* protocol that every agent adopts — collapsing the whole problem — at which point unifying at the editor layer was more machinery than needed.
 
-We think Bet 0 and Bet 2 are the real risks, and both are answerable in the first two milestones — because v1 deliberately ships **two agents with two different reverse-MCP transports** (Claude over WebSocket, Codex over local-HTTP/SSE) and checks fidelity on both. If the reverse-MCP model doesn't generalize across vendors, we find out in week 3, not month 3.
+We think Bet 0 and Bet 2 are the real risks, and both are answerable in the first two milestones — because v1 deliberately ships **two agents with two genuinely different reverse channels** (Claude: we host a WebSocket the CLI calls into; Codex: we proxy its app-server over stdio behind its native `--remote` TUI) and checks fidelity on both. That contrast is stronger than the original plan intended — the shared `diff`/`approvals`/`events` services had to absorb not just a second transport but a second *channel shape* (host-a-server vs proxy-a-stream). They did. If the model didn't generalize across vendors, we'd have found out in week 3, not month 3. (v1 originally said "Codex over local-HTTP/SSE" — that wire was wrong; see `CODEX.md`.)

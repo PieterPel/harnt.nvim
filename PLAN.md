@@ -4,6 +4,22 @@
 
 This document is the *what* and the *how*. See `BET.md` for the *why* and what we're wagering on.
 
+> **Correction (2026-07-19) — Codex wire.** This plan originally specified Codex as
+> reverse-MCP over **local-HTTP/SSE `/ide`** with `CODEX_CODE_SSE_PORT` /
+> `ENABLE_IDE_INTEGRATION` (copied from `ishiooon/codex.nvim`, which targeted an
+> older/experimental Codex). **That was wrong on every count** and is left in
+> below only where it's clearly marked, so the mistake stays visible. What real
+> `codex-0.144.4` actually exposes, verified end-to-end:
+> - Codex's `/ide` is a **unix socket** (`$TMPDIR/codex-ipc/ipc-{uid}.sock`,
+>   length-prefixed JSON), and it is **context-only** — no diffs/approvals.
+> - The channel that carries **diffs + answerable approvals** is
+>   **`codex app-server`**: harnt proxies it over **stdio** while the user's
+>   **native TUI** connects via `codex --remote ws://…` and renders the chat.
+>   harnt taps the stream → our `diff`/`approvals` services → answers the
+>   app-server. Full fidelity, on-thesis (app-server is *transport*, not a chat
+>   UI we render). **`CODEX.md` is authoritative for Codex; it supersedes the
+>   Codex specifics in this file.**
+
 ---
 
 ## 0. The one thing to understand first
@@ -110,7 +126,11 @@ Normalize **only the UI-critical surface** the editor services actually react to
 ### v1 in scope
 - Shared transport + editor services (`context`, `diff`, `approvals`, `apply`) against a **Fake** provider.
 - **Claude** provider — reverse-MCP over **WebSocket**, lockfile discovery. *Flagship: the proven model.*
-- **Codex** provider — reverse-MCP over **local-HTTP/SSE** (`/ide`), its own discovery. *Proves the base generalizes across a second transport + second vendor.*
+- **Codex** provider — **app-server proxy**: harnt spawns `codex app-server`
+  (stdio), serves the native TUI over a **ws** server (`codex --remote`), and taps
+  the stream for diffs + approvals. *Proves the base generalizes across a second
+  vendor and a genuinely different channel shape.* (Was: "local-HTTP/SSE `/ide`" —
+  wrong; see the Correction note above and `CODEX.md`.)
 - **Fake** provider — in-process, for E2E + services dev without real CLIs.
 - Provider registry + capability passthrough + `HarntEvent` autocmd.
 - Unified command + keymap surface across all providers.
@@ -136,7 +156,7 @@ Shipping **two agents on two different transports** in v1 is the whole point: it
 |---|---|---|---|
 | Fake | — | in-process | v1 (gate) |
 | **Claude** | WebSocket | IDE integration (lockfile) | v1 (gate) |
-| **Codex** | local-HTTP/SSE | `/ide` (`ENABLE_IDE_INTEGRATION`) | v1 (gate) |
+| **Codex** | stdio proxy + ws | `app-server` + native TUI (`codex --remote`) | v1 (gate) |
 | Antigravity | local-HTTP | IDE Companion spec (MCP/HTTP) | v1.1 — reuses base |
 | Qwen | local-HTTP | Gemini/Antigravity companion spec | fast-follow |
 | ~~Gemini CLI~~ | local-HTTP | IDE companion | **dropped** — consumer access ended 2026-06-18; superseded by Antigravity CLI |
@@ -153,7 +173,15 @@ Order matters. Fake provider exists early so services work proceeds without real
 - [ ] **M0 — Bootstrap.** Repo layout, `plugin/harnt.lua`, `checkhealth`, busted-in-nvim harness, CI. Fake provider stub emitting canned tool/diff/approval events.
 - [ ] **M1 — Transport + editor services.** `jsonrpc` codec; `context`/`diff`/`approvals`/`apply` services fully tested against Fake. This is the reusable heart; get it right before any real agent.
 - [ ] **M2 — Claude (WebSocket).** `reverse_mcp` base + `ws` transport + lockfile discovery + auth token + editor-tool registration. Claude's own TUI runs in a terminal split; we provide context + `openDiff` + `getDiagnostics` + selection + apply. **Acceptance: plan mode, slash commands, and `/compact` all still work — because we never touched its UI.**
-- [ ] **M3 — Codex (local-HTTP/SSE) — the generalization proof.** `http` transport + Codex `/ide` adapter as a *config table* on the same base. Confirm the base didn't need to fork for a second vendor/transport. **Acceptance: Codex `/ide` diffs, approvals, and context all route through our shared services; the base gained parameters, not conditionals.**
+- [ ] **M3 — Codex (app-server proxy) — the generalization proof.** harnt spawns
+  `codex app-server` (stdio JSON), stands up a ws server for the native TUI
+  (`codex --remote ws://…`), and proxies + taps the stream: `item/fileChange` →
+  `diff` service, `item/fileChange/requestApproval` → `approvals`, answered back to
+  the app-server with `{decision}`. Confirm the shared `diff`/`approvals`/`events`
+  services took a *second channel shape* without forking. **Acceptance: Codex
+  diffs + approvals route through our shared services and show in nvim, while the
+  native TUI renders the chat untouched.** (Was: `http` transport + `/ide` config
+  table — wrong premise; see Correction note + `CODEX.md`.)
 - [ ] **M4 — Registry + passthrough + unified UX.** Provider registry API, `payload.provider` passthrough, `HarntEvent` autocmd, unified `:Harnt*` commands and keymaps, docs.
 - [ ] **M5 — Fast-follow adapters.** Antigravity and Qwen, each a thin table on the existing base — the proof that the base pays off.
 - [ ] **M6 — (Optional) persistence.** State file or lightweight SQLite for session listing/resume, strictly opt-in. No mandatory daemon. Cross-instance attach only if it stays in-process-friendly.
@@ -194,7 +222,14 @@ Release v1 only when: Fake E2E green · Claude green with no-feature-loss check 
 ## 7. Non-goals / guardrails
 
 - Do **not** build a chat UI, transcript, or session-tree renderer for any agent — the agent's TUI is the chat. This is the whole project.
-- Do **not** drive a headless / editor-drives-and-renders agent (ACP, app-server-only). It's a **permanent non-goal**: use an ACP client for those. Codex is in scope via `/ide`, not via app-server.
+- Do **not** drive a headless agent *and render its chat ourselves* (ACP,
+  app-server-as-the-UI-we-draw). It's a **permanent non-goal**: use an ACP client
+  for those. The line is *who renders the chat* — not *which wire*. Codex is in
+  scope because its **native TUI** renders the chat (`codex --remote`); we use
+  `app-server` only as the transport we tap for diffs/approvals. Using app-server
+  as *transport* is fine; using it as a chat UI we paint is the non-goal.
+  (Earlier this line read "Codex is in scope via `/ide`, not via app-server" —
+  superseded; see `CODEX.md`.)
 - Do **not** bridge an agent through a lossy surface when it has a richer native one.
 - Do **not** require an external runtime or mandatory daemon.
 - Do **not** ship per-hunk diff, worktrees, or a web UI in v1.
@@ -206,6 +241,6 @@ Release v1 only when: Fake E2E green · Claude green with no-feature-loss check 
 
 - **Persistence:** state file vs. an optional SQLite binding vs. a *narrow optional* out-of-process sidecar — decided post-v1, and only if in-process can't do it cleanly.
 - **Shape A editor UI depth:** how much beyond diff/approvals to give the agents before it stops being idiomatic (e.g. a picker for the agent's own slash commands? or is that its job?).
-- **Codex `/ide` wire:** confirm exact transport, discovery, env vars, tool names, and auth from source before M3 (docs are thin).
+- ~~**Codex `/ide` wire:** confirm exact transport, discovery, env vars, tool names, and auth from source before M3.~~ **RESOLVED (2026-07-19):** it's the `app-server` proxy, not `/ide`. Wire fully reverse-engineered + verified end-to-end — see `CODEX.md`.
 - **Cursor `cursor-agent`:** does it expose an `/ide`-style reverse channel at all? If it's headless-only, it's a non-goal by §7. Research spike before committing.
 - **Windows:** WS + local-HTTP both need a Windows path; framed-JSON transports were chosen partly for this.
