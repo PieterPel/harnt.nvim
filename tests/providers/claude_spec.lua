@@ -82,15 +82,8 @@ describe("claude.tools", function()
 
     assert.equals("/b.lua", captured.spec.path)
     assert.same({ "line1", "line2" }, captured.spec.proposed)
-
-    local change_log = require("harnt.services.changes")
-    change_log.clear()
     captured.cb({ accepted = true, content = { "line1", "line2" } })
     assert.equals("FILE_SAVED", text)
-    -- the accepted change is recorded to the session change-log
-    assert.equals(1, change_log.count())
-    assert.equals("/b.lua", change_log.list()[1].path)
-    assert.equals("claude", change_log.list()[1].provider)
   end)
 
   it("openDiff reports DIFF_REJECTED on reject", function()
@@ -109,12 +102,8 @@ describe("claude.tools", function()
       end
     )
     diff.open = orig_open
-    local change_log = require("harnt.services.changes")
-    change_log.clear()
     captured.cb({ accepted = false })
     assert.equals("DIFF_REJECTED", text)
-    -- a rejected change is not recorded
-    assert.equals(0, change_log.count())
   end)
 
   it("getCurrentSelection reports success=false with no selection", function()
@@ -246,5 +235,54 @@ describe("claude discovery + start", function()
     assert.equals(0, vim.fn.filereadable(path))
 
     vim.env.CLAUDE_CONFIG_DIR = orig
+  end)
+end)
+
+describe("claude PostToolUse hook recording", function()
+  local change_log = require("harnt.services.changes")
+  before_each(function()
+    change_log.clear()
+  end)
+
+  it("records a Write payload as an add with the written content", function()
+    claude.record_hook_change({
+      tool_name = "Write",
+      tool_input = { file_path = "/w.txt", content = "hi there" },
+      tool_response = {
+        type = "create",
+        filePath = "/w.txt",
+        content = "hi there",
+        structuredPatch = {},
+      },
+    })
+    assert.equals(1, change_log.count())
+    local c = change_log.list()[1]
+    assert.equals("/w.txt", c.path)
+    assert.equals("add", c.kind)
+    assert.equals("claude", c.provider)
+    assert.equals("hi there", c.diff)
+  end)
+
+  it("records an Edit payload as an update, rendering structuredPatch hunks", function()
+    claude.record_hook_change({
+      tool_name = "Edit",
+      tool_input = { file_path = "/e.txt" },
+      tool_response = {
+        type = "update",
+        filePath = "/e.txt",
+        structuredPatch = {
+          { oldStart = 1, oldLines = 1, newStart = 1, newLines = 1, lines = { "-a", "+b" } },
+        },
+      },
+    })
+    local c = change_log.list()[1]
+    assert.equals("/e.txt", c.path)
+    assert.equals("update", c.kind)
+    assert.same({ "@@ -1,1 +1,1 @@", "-a", "+b" }, vim.split(c.diff, "\n", { plain = true }))
+  end)
+
+  it("ignores a payload without a file path", function()
+    claude.record_hook_change({ tool_name = "Write", tool_input = {}, tool_response = {} })
+    assert.equals(0, change_log.count())
   end)
 end)

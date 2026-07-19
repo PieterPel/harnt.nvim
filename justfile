@@ -40,6 +40,11 @@ try:
 e2e-claude:
     env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-claude.lua
 
+# Real-CLI e2e smoke: Claude auto-accept edits reach the change-log via the
+# injected PostToolUse hook. Needs `claude` on PATH + a trusted cwd.
+e2e-claude-hooks:
+    env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-claude-hooks.lua
+
 # Real-CLI e2e smoke vs Codex app-server proxy (needs `codex` on PATH + authed).
 # Drives one file-editing turn through the real transport + tap; asserts accept
 # writes the file. Nondeterministic + real API calls; NOT part of `ci`.

@@ -1,5 +1,7 @@
 --- Reverse-MCP provider base.
 ---
+--- TODO: codex info is outdated here
+---
 --- The shared machinery for every "editor as tool-server" agent (Claude, Codex
 --- `/ide`, Gemini companion): host a local server, advertise it via a discovery
 --- file with an auth token, speak MCP so the agent can call our editor tools,

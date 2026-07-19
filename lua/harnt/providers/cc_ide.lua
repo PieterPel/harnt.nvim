@@ -1,37 +1,21 @@
 --- Shared "Claude Code IDE" protocol surface.
 ---
---- Claude Code and Codex `/ide` expose the same reverse-MCP tool set plus
---- selection_changed / at_mentioned notifications (Codex's `/ide` mirrors
---- claudecode). This module is that shared surface, wired to harnt's services —
---- so the Claude and Codex providers are just discovery + env + transport on top.
---- Protocol per coder/claudecode.nvim PROTOCOL.md.
+--- The reverse-MCP tool set Claude Code calls into the editor for — openDiff,
+--- getDiagnostics, selection, workspace/editors — plus the selection_changed /
+--- at_mentioned notifications the editor pushes back. Wired to harnt's services,
+--- so the Claude provider is just discovery + env + transport on top. Protocol
+--- per coder/claudecode.nvim PROTOCOL.md.
+---
+--- (Only Claude uses this surface. Codex is a different shape entirely — an
+--- app-server proxy — see providers/codex.lua and CODEX.md.) Claude edits are
+--- recorded into the change-log via a PostToolUse hook in providers/claude.lua,
+--- not here — openDiff is a permission prompt, not an edit feed.
 
-local change_log = require("harnt.services.changes")
 local context = require("harnt.services.context")
 local diff = require("harnt.services.diff")
 local mcp = require("harnt.transport.mcp")
 
 local M = {}
-
---- Record an accepted openDiff into the session change-log so it shows in
---- `:Harnt changes` alongside every other agent's edits — including auto-accepted
---- ones. `before`/`after` are joined file contents; we store a real unified diff.
----@param path string
----@param before string
----@param after string
----@param existed boolean
-local function record_accepted(path, before, after, existed)
-  local nl = function(s)
-    return s ~= "" and (s .. "\n") or ""
-  end
-  local udiff = vim.diff(nl(before), nl(after), {})
-  change_log.record({
-    path = path,
-    kind = existed and "update" or "add",
-    diff = (type(udiff) == "string" and udiff ~= "") and udiff or after,
-    provider = "claude",
-  })
-end
 
 local EMPTY_SCHEMA = { type = "object", properties = vim.empty_dict() }
 
@@ -56,12 +40,7 @@ function M.tools(_ctx)
       handler = function(args, respond)
         local target = args.new_file_path or args.old_file_path
         local proposed = vim.split(args.new_file_contents or "", "\n")
-        local existed = vim.fn.filereadable(target) == 1
-        local before = existed and table.concat(vim.fn.readfile(target), "\n") or ""
         diff.open({ path = target, proposed = proposed }, function(result)
-          if result.accepted then
-            record_accepted(target, before, table.concat(result.content or proposed, "\n"), existed)
-          end
           respond(mcp.content(result.accepted and "FILE_SAVED" or "DIFF_REJECTED"))
         end)
       end,
