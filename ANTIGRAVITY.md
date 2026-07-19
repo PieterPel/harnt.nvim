@@ -234,6 +234,34 @@ auth — feeding the real token there still fails. The LS obtains its OAuth toke
 back the token state** as an enveloped protobuf frame. A non-streamed 200 yields
 *"state sync subscription error for topic uss-oauth: unexpected EOF"*.
 
+## ✅✅ AUTH CRACKED (serve-verify loop, 6 cycles) — the LS authenticates under harnt
+
+Serving the `uss-oauth` UnifiedStateSync subscription with the following makes the
+real LS authenticate (verified: zero errors, no "Failed to get OAuth token"):
+
+`SubscribeResponse{ initial_state{ rows... } }` streamed as one Connect frame,
+where `initial_state` (field 1) contains repeated rows (field 1), each row =
+`{ #1 key:string, #2 value:{ #1 payload:string } }`. For `uss-oauth`, two rows:
+
+1. **`authStateWithContextSentinelKey`** → value payload = **plain JSON**
+   `{ "state": "signedIn", "context": { project, showProjectError, errorMessage, … } }`
+   (states: `signedIn`/`signedOut`/`uninitialized`/`loginError`).
+2. **`oauthTokenInfoSentinelKey`** → value payload = **base64( protobuf `OAuthTokenInfo` )**
+   where `OAuthTokenInfo { access_token=1 (string), token_type=2 (string),
+   refresh_token=3 (string), expiry=4 (Timestamp msg, omittable), is_gcp_tos=6 (bool) }`.
+   The token comes from the **keychain** (`gemini/antigravity`, go-keyring base64
+   → JSON `{token:{access_token,token_type,refresh_token,expiry}}`).
+
+The error progression that nailed it: `unexpected EOF` (framing) → `key not found`
+(need `oauthTokenInfoSentinelKey`, not `authStateWithContext`) → `illegal base64`
+(value is base64) → `proto: cannot unmarshal` (inner is protobuf, not JSON) →
+**clean** (base64(protobuf OAuthTokenInfo)). Different keys use different value
+encodings (auth-status = JSON; token = base64+protobuf).
+
+Remaining: build this into the provider's ExtensionServer, then editor-action
+methods (`OpenDiffZones`/`WriteCascadeEdit`) → nvim diff, then launch `agy` +
+verify a real turn.
+
 ### Serve-verify loop progress (against the real LS)
 
 Built a Lua ExtensionServer (our `http`+`connect`+`protobuf`) and iterated:
