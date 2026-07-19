@@ -133,6 +133,39 @@ function M.selection()
   }
 end
 
+--- Payload for a `selection_changed` push: the active file + cursor as an empty
+--- selection (0-indexed LSP positions), matching the Claude IDE protocol.
+---@return table
+function M.selection_payload()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local path = vim.api.nvim_buf_get_name(bufnr)
+  local cursor = M.cursor()
+  local pos = { line = cursor.row - 1, character = cursor.col }
+  return {
+    text = "",
+    filePath = path,
+    fileUrl = path ~= "" and ("file://" .. path) or "",
+    selection = { start = pos, ["end"] = pos, isEmpty = true },
+  }
+end
+
+--- Payload for an `at_mentioned` push: the current file and (1-indexed) line
+--- range — the last visual selection if there is one, else the whole file.
+---@return table
+function M.at_mention_payload()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local path = vim.api.nvim_buf_get_name(bufnr)
+  local first = vim.fn.getpos("'<")
+  local last = vim.fn.getpos("'>")
+  local line_start, line_end
+  if first[2] > 0 and last[2] > 0 then
+    line_start, line_end = first[2], last[2]
+  else
+    line_start, line_end = 1, vim.api.nvim_buf_line_count(bufnr)
+  end
+  return { filePath = path, lineStart = line_start, lineEnd = line_end }
+end
+
 --- Aggregate snapshot of everything above.
 ---@return harnt.context.Snapshot
 function M.snapshot()

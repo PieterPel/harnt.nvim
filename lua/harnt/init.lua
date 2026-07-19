@@ -27,6 +27,10 @@ M.subcommands = {
   toggle = function(args)
     require("harnt.manager").toggle(args[1] or "claude")
   end,
+  --- `:Harnt send` — send the current file/selection to running agents (@-mention).
+  send = function()
+    require("harnt.manager").send()
+  end,
   --- `:Harnt accept` — accept the current diff.
   accept = function()
     local diff = require("harnt.services.diff")

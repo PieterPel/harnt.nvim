@@ -40,6 +40,7 @@ local M = {}
 --- the right discovery env vars.
 ---@class harnt.reverse_mcp.Session : harnt.Session
 ---@field info harnt.reverse_mcp.Info
+---@field push fun(self: harnt.reverse_mcp.Session, method: string, params: any) broadcast a notification to connected agents
 
 --- Generate a 32-char lowercase-hex auth token (128 bits from the OS CSPRNG when
 --- available, otherwise a hashed high-resolution fallback).
@@ -133,6 +134,11 @@ function M.start(config, ctx)
     -- outstanding server-initiated requests to respond to here.
     respond = function() end,
     interrupt = function() end,
+    push = function(_self, method, params)
+      for _, mcp_server in pairs(servers) do
+        mcp_server:notify(method, params)
+      end
+    end,
     stop = function()
       if stopped then
         return

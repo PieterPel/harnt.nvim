@@ -151,6 +151,33 @@ describe("manager.toggle", function()
   end)
 end)
 
+describe("manager.send", function()
+  it("pushes an at_mention to running push-capable sessions", function()
+    local pushed
+    registry.register({
+      name = "pushy",
+      detect = function()
+        return true
+      end,
+      start = function()
+        return {
+          on = function() end,
+          respond = function() end,
+          interrupt = function() end,
+          stop = function() end,
+          push = function(_s, method, params)
+            pushed = { method = method, params = params }
+          end,
+        }
+      end,
+    })
+    manager.launch("pushy", { open_terminal = fake_terminal })
+    manager.send()
+    assert.equals("at_mentioned", pushed.method)
+    assert.is_table(pushed.params)
+  end)
+end)
+
 describe("harnt.statusline", function()
   it("is empty when idle and names running providers otherwise", function()
     local harnt = require("harnt")

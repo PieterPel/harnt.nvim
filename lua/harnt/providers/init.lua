@@ -19,6 +19,7 @@ local M = {}
 ---@field respond fun(self: harnt.Session, id: harnt.jsonrpc.Id, result: any) answer a server-initiated request (e.g. an approval)
 ---@field interrupt fun(self: harnt.Session) interrupt the current turn
 ---@field stop fun(self: harnt.Session) end the session
+---@field push? fun(self: harnt.Session, method: string, params: any) push an unsolicited notification to the agent (context updates); optional
 
 --- A registered agent.
 ---@class harnt.Provider

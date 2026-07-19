@@ -53,6 +53,21 @@ describe("reverse_mcp.start", function()
     session:stop()
   end)
 
+  it("push is a no-op with no connected clients", function()
+    local session = reverse_mcp.start({
+      name = "test",
+      port = 0,
+      discovery = { write = function() end, remove = function() end },
+      tools = function()
+        return {}
+      end,
+    })
+    assert.has_no.errors(function()
+      session:push("selection_changed", { text = "" })
+    end)
+    session:stop()
+  end)
+
   it("removes the discovery entry and emits session.completed on stop", function()
     local removed = false
     local completed = false

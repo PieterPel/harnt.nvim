@@ -6,6 +6,7 @@
 --- When the process exits, the session is torn down (server closed, lockfile
 --- removed).
 
+local context = require("harnt.services.context")
 local registry = require("harnt.providers")
 local terminal = require("harnt.terminal")
 
@@ -15,6 +16,7 @@ local M = {}
 ---@field name string
 ---@field session harnt.Session
 ---@field terminal? harnt.terminal.Handle
+---@field ctx_group? integer autocmd group pushing context to the agent
 
 ---@type table<string, harnt.manager.Instance?>
 local instances = {}
@@ -54,6 +56,19 @@ function M.launch(name, opts)
   local instance = { name = name, session = session }
   instances[name] = instance
 
+  -- Push editor context (selection/cursor) to the agent as it moves.
+  local push = session.push
+  if push then
+    local group = vim.api.nvim_create_augroup("harnt_ctx_" .. name, { clear = true })
+    vim.api.nvim_create_autocmd({ "CursorHold", "ModeChanged" }, {
+      group = group,
+      callback = function()
+        push(session, "selection_changed", context.selection_payload())
+      end,
+    })
+    instance.ctx_group = group
+  end
+
   -- Shape A: run the agent's own TUI with the discovery env.
   if provider.cmd then
     ---@cast session harnt.reverse_mcp.Session
@@ -79,10 +94,25 @@ function M.stop(name)
     return
   end
   instances[name] = nil
+  if instance.ctx_group then
+    pcall(vim.api.nvim_del_augroup_by_id, instance.ctx_group)
+  end
   if instance.terminal then
     pcall(terminal.close, instance.terminal)
   end
   instance.session:stop()
+end
+
+--- Push the current file + line range to every running agent as an at-mention
+--- (`:Harnt send`; select first to send a range).
+function M.send()
+  local payload = context.at_mention_payload()
+  for _, name in ipairs(M.running()) do
+    local instance = instances[name]
+    if instance and instance.session.push then
+      instance.session:push("at_mentioned", payload)
+    end
+  end
 end
 
 --- Stop every running provider.
