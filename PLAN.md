@@ -226,7 +226,7 @@ That's the entire surface. The value is that it's *identical across every agent*
 `:HarntOpen` · `:HarntNew [provider]` · `:HarntStop` · `:HarntAddFile` · `:HarntDiffAccept` · `:HarntDiffReject` · `:HarntApprove`
 
 ### Keymaps (v1)
-`<CR>` open session · `n` new · `q` close panel · `1`–`4` approval (allow once/always, deny once/always) · `F9`/`F10`/`F11` diff accept/reject/close.
+`<CR>` open session · `n` new · `q` close panel · `1`–`4` approval (allow once/always, deny once/always) · `<leader>a`/`<leader>r`/`<leader>c`/`<leader>R` diff accept/reject/comment/review (shipped defaults; buffer-local, configurable).
 
 ---
 
@@ -234,7 +234,8 @@ That's the entire surface. The value is that it's *identical across every agent*
 
 - **busted-in-nvim** — editor services (context/diff/approvals/apply), transport codec, adapter state machines, all against the Fake provider.
 - **Real-CLI smoke** — Claude and Codex behind env gates: launch the TUI, connect the reverse channel, propose+accept a diff, approve a command.
-- **No-feature-loss acceptance (the differentiator's guardrail)** — per provider, enumerate native features and assert they still work end-to-end. Claude: plan mode, slash commands, `/compact`. Codex: `/ide` diffs, approval workflow, thread resume. **A provider does not ship until its native features are demonstrably intact.** (Cheap to satisfy, because we never render its chat — but we still assert it.)
+- **@-mention / interactive send (`:Harnt send` → `on_mention`)** — a first-class capability now, so it earns real-CLI e2e on every provider (never a mock, the way it slipped before): `just e2e-claude-mention` (structured `at_mentioned`: Claude resolves a file+range it was never named), `just e2e-codex-mention` / `just e2e-agy-mention` (spikes: does typing `@path` into the native TUI land as a mention or trip the file picker?). Nondeterministic, so gated out of `just ci` like the other real-CLI e2e.
+- **No-feature-loss acceptance (the differentiator's guardrail)** — per provider, enumerate native features and assert they still work end-to-end. Claude: plan mode, slash commands, `/compact`, @-mention. Codex: `/ide` diffs, approval workflow, thread resume, @-mention. **A provider does not ship until its native features are demonstrably intact.** (Cheap to satisfy, because we never render its chat — but we still assert it.)
 
 Release v1 only when: Fake E2E green · Claude green with no-feature-loss check passing · Codex green with no-feature-loss check passing · `checkhealth` accurate.
 

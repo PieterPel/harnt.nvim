@@ -4,6 +4,7 @@
 
 local health = require("harnt.health")
 local registry = require("harnt.providers")
+local provider = require("tests.support.provider")
 
 ---@type table<string, string[]>
 local calls
@@ -41,30 +42,22 @@ describe("health.check", function()
     assert.is_true(#calls.info >= 1)
   end)
 
-  it("reports available vs unavailable providers", function()
-    registry.register({
-      name = "up",
-      detect = function()
-        return true
+  it("delegates to each registered provider's health probe", function()
+    -- `health` is a required capability, so check() calls it for every provider
+    -- (no generic available/unavailable fallback). Each provider owns its report.
+    registry.register(provider("up", {
+      health = function(report)
+        report.ok("up: all good")
       end,
-      start = function()
-        return {}
+    }))
+    registry.register(provider("down", {
+      health = function(report)
+        report.warn("down: not authenticated")
       end,
-    })
-    registry.register({
-      name = "down",
-      detect = function()
-        return false
-      end,
-      start = function()
-        return {}
-      end,
-    })
+    }))
     health.check()
 
-    local ok_joined = table.concat(calls.ok, "\n")
-    local warn_joined = table.concat(calls.warn, "\n")
-    assert.is_truthy(ok_joined:find("up: available"))
-    assert.is_truthy(warn_joined:find("down"))
+    assert.is_truthy(table.concat(calls.ok, "\n"):find("up: all good"))
+    assert.is_truthy(table.concat(calls.warn, "\n"):find("down: not authenticated"))
   end)
 end)

@@ -55,15 +55,17 @@ function M.launch(name, opts)
   local instance = { name = name, session = session }
   instances[name] = instance
 
-  -- Push editor context to the agent as the cursor moves — the provider decides
-  -- what to push and in what shape.
-  if provider.on_selection then
-    local on_selection = provider.on_selection
+  -- PUSH-mode providers stream the selection as the cursor moves. This guard is a
+  -- real either/or, not a silent gap: pull-mode providers (Codex, Antigravity)
+  -- answer selection on demand instead and legitimately have no push hook. The
+  -- contract's `validate()` guarantees every provider serves selection one way.
+  if provider.push_selection then
+    local push_selection = provider.push_selection
     local group = vim.api.nvim_create_augroup("harnt_ctx_" .. name, { clear = true })
     vim.api.nvim_create_autocmd({ "CursorHold", "ModeChanged" }, {
       group = group,
       callback = function()
-        on_selection(session)
+        push_selection(session)
       end,
     })
     instance.ctx_group = group
@@ -71,12 +73,13 @@ function M.launch(name, opts)
 
   -- Run the agent's own TUI. `cmd` may be static (Claude) or a function of the
   -- session (Codex needs the proxy's ws port in its `--remote` argument); `env`
-  -- carries reverse-MCP discovery vars for providers that use them.
-  if provider.cmd then
-    local cmd = type(provider.cmd) == "function" and provider.cmd(session) or provider.cmd
-    ---@cast cmd string[]
+  -- carries reverse-MCP discovery vars for providers that use them. An empty `cmd`
+  -- means no external process (e.g. the Fake provider).
+  local cmd = type(provider.cmd) == "function" and provider.cmd(session) or provider.cmd
+  ---@cast cmd string[]
+  if #cmd > 0 then
     local info = (session --[[@as { info: harnt.reverse_mcp.Info }]]).info
-    local env = provider.env and provider.env(info) or nil
+    local env = provider.env(info)
     local open = opts.open_terminal or terminal.open
     instance.terminal = open({
       cmd = cmd,
@@ -149,7 +152,9 @@ function M.review(id)
   end
   local provider = target and registry.get(target.name) or nil
 
-  if not (target and provider and provider.review) then
+  -- Every provider implements `review` (it's required), so the only fallback is
+  -- "no agent is running to hand this to" — then we just reject the diff.
+  if not (target and provider) then
     reject()
     return
   end
@@ -171,8 +176,16 @@ function M.send()
   for _, name in ipairs(M.running()) do
     local instance = instances[name]
     local provider = registry.get(name)
-    if instance and provider and provider.on_mention then
-      provider.on_mention(instance.session)
+    -- `on_mention` is required, so no capability guard — just deliver. The provider
+    -- picks its native shape: a protocol notification (Claude's `at_mentioned`) or
+    -- typed prose (Codex/Antigravity type an `@path` into their TUI via send_text).
+    if instance and provider then
+      provider.on_mention({
+        session = instance.session,
+        send_text = function(text)
+          M.send_text(name, text)
+        end,
+      })
     end
   end
 end

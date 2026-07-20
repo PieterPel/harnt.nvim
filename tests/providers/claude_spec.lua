@@ -79,20 +79,22 @@ describe("claude.tools", function()
       return 1
     end
 
-    local text
+    local result
     by_name(claude.tools({}), "openDiff").handler({
       old_file_path = "/a.lua",
       new_file_path = "/b.lua",
       new_file_contents = "line1\nline2",
-    }, function(result)
-      text = result.content[1].text
+    }, function(r)
+      result = r
     end)
     diff.open = orig_open
 
     assert.equals("/b.lua", captured.spec.path)
     assert.same({ "line1", "line2" }, captured.spec.proposed)
     captured.cb({ accepted = true, content = { "line1", "line2" } })
-    assert.equals("FILE_SAVED", text)
+    -- Two content items: the marker + the final content (claudecode protocol).
+    assert.equals("FILE_SAVED", result.content[1].text)
+    assert.equals("line1\nline2", result.content[2].text)
   end)
 
   it("openDiff reports DIFF_REJECTED on reject", function()
@@ -103,16 +105,17 @@ describe("claude.tools", function()
       captured = { spec = spec, cb = cb }
       return 1
     end
-    local text
+    local result
     by_name(claude.tools({}), "openDiff").handler(
-      { old_file_path = "/a", new_file_path = "/a", new_file_contents = "x" },
-      function(result)
-        text = result.content[1].text
+      { old_file_path = "/a", new_file_path = "/a", new_file_contents = "x", tab_name = "diff-a" },
+      function(r)
+        result = r
       end
     )
     diff.open = orig_open
     captured.cb({ accepted = false })
-    assert.equals("DIFF_REJECTED", text)
+    assert.equals("DIFF_REJECTED", result.content[1].text)
+    assert.equals("diff-a", result.content[2].text)
   end)
 
   it("getCurrentSelection reports success=false with no selection", function()
@@ -142,10 +145,10 @@ describe("claude.tools", function()
 end)
 
 describe("claude context push", function()
-  it("on_selection pushes selection_changed via the session", function()
+  it("push_selection pushes selection_changed via the session", function()
     vim.cmd("enew")
     local pushed
-    claude.on_selection({
+    claude.push_selection({
       push = function(_s, method, params)
         pushed = { method = method, params = params }
       end,
@@ -154,13 +157,15 @@ describe("claude context push", function()
     assert.is_true(pushed.params.selection.isEmpty)
   end)
 
-  it("on_mention pushes at_mentioned via the session", function()
+  it("on_mention pushes at_mentioned via the session in the MentionContext", function()
     vim.cmd("enew")
     local pushed
     claude.on_mention({
-      push = function(_s, method, params)
-        pushed = { method = method, params = params }
-      end,
+      session = {
+        push = function(_s, method, params)
+          pushed = { method = method, params = params }
+        end,
+      },
     })
     assert.equals("at_mentioned", pushed.method)
     assert.is_number(pushed.params.lineStart)

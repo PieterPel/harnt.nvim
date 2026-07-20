@@ -59,16 +59,10 @@ function M.check()
   for _, name in ipairs(names) do
     health.start("harnt: " .. name)
     local provider = registry.get(name)
-    if provider and provider.health then
-      -- Provider-specific probes (binary, version, auth, discovery paths).
+    if provider then
+      -- Provider-specific probes (binary, version, auth, discovery paths). `health`
+      -- is a required part of the contract, so every provider has one.
       provider.health(report)
-    elseif registry.is_available(name) then
-      report.ok(name .. ": available")
-    else
-      report.warn(
-        name .. ": registered but not available",
-        "detect() returned false — is the CLI installed and authenticated?"
-      )
     end
   end
 end

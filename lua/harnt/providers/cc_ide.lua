@@ -43,7 +43,15 @@ function M.tools(_ctx)
         -- Tag with the provider so review feedback routes to Claude's TUI even
         -- when other agents are running (this surface is Claude-only).
         diff.open({ path = target, proposed = proposed, origin = "claude" }, function(result)
-          respond(mcp.content(result.accepted and "FILE_SAVED" or "DIFF_REJECTED"))
+          if result.accepted then
+            -- Claude expects TWO content items on save: the marker + the final
+            -- (possibly user-edited) content. Without the content it can't treat
+            -- the edit as resolved and re-prompts in its TUI. (Per claudecode.nvim.)
+            local final = table.concat(result.content or proposed, "\n")
+            respond(mcp.texts({ "FILE_SAVED", final }))
+          else
+            respond(mcp.texts({ "DIFF_REJECTED", args.tab_name or target }))
+          end
         end)
       end,
     },
@@ -177,20 +185,19 @@ local function at_mentioned_payload()
   return { filePath = range.path, lineStart = range.line_start, lineEnd = range.line_end }
 end
 
---- Push a live selection update as the cursor moves.
----@param session harnt.Session
-function M.on_selection(session)
-  if session.push then
-    session:push("selection_changed", selection_changed_payload())
-  end
+--- PUSH the live selection as the cursor moves (Claude's `selection_changed`
+--- notification). The reverse-MCP session always has a `push` channel.
+---@param session harnt.reverse_mcp.Session
+function M.push_selection(session)
+  session:push("selection_changed", selection_changed_payload())
 end
 
---- Send the current file/selection as an @-mention.
----@param session harnt.Session
-function M.on_mention(session)
-  if session.push then
-    session:push("at_mentioned", at_mentioned_payload())
-  end
+--- Send the current file/selection as an @-mention. Claude has a native
+--- `at_mentioned` notification, so we deliver it over the protocol, not the TUI.
+---@param ctx harnt.MentionContext
+function M.on_mention(ctx)
+  local session = ctx.session --[[@as harnt.reverse_mcp.Session]]
+  session:push("at_mentioned", at_mentioned_payload())
 end
 
 --- Deliver diff-review feedback: reject the diff, then type the comments into the

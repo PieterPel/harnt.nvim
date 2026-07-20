@@ -7,15 +7,51 @@
 --- requests. This is the deterministic seam TOOLS.md/PLAN call for.
 
 local events = require("harnt.events")
+local context = require("harnt.services.context")
 
 local M = {}
 
 M.name = "fake"
 
+--- No external process: the fake runs in-process, so the manager spawns no TUI.
+--- An empty `cmd` is how a provider says "nothing to launch".
+M.cmd = {}
+
+--- No spawn env (nothing is spawned).
+---@return table<string, string>
+function M.env()
+  return {}
+end
+
 --- Always available.
 ---@return boolean
 function M.detect()
   return true
+end
+
+--- `:checkhealth harnt` probe: the fake is always present (it's in-process).
+---@param report harnt.health.Report
+function M.health(report)
+  report.ok("fake: in-process test provider (always available)")
+end
+
+--- Review feedback: there's no real agent to deliver to, so just resolve the diff
+--- as rejected. Tests assert on the reject; the comments have nowhere native to go.
+---@param ctx harnt.ReviewContext
+function M.review(ctx)
+  ctx.reject()
+end
+
+--- @-mention: no real agent/TUI to deliver into, so this is a no-op. Kept explicit
+--- (not absent) so the contract stays total and a reader sees the deliberate choice.
+---@param _ctx harnt.MentionContext
+function M.on_mention(_ctx) end
+
+--- PULL: serve the current editor selection on demand — lets tests exercise the
+--- pull mechanism without a real CLI.
+---@return harnt.context.Selection?
+function M.pull_selection()
+  return context.selection()
 end
 
 --- A scripted step the fake can replay: an event type + payload.

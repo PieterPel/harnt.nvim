@@ -113,7 +113,7 @@ M.discovery = {
 -- Shared Claude-Code-IDE surface (tools + capabilities).
 M.tools = cc_ide.tools
 M.review = cc_ide.review
-M.on_selection = cc_ide.on_selection
+M.push_selection = cc_ide.push_selection -- Claude serves selection by PUSH
 M.on_mention = cc_ide.on_mention
 
 --- Environment variables so the spawned `claude` CLI discovers this session.

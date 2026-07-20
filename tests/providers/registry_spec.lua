@@ -5,7 +5,9 @@
 
 local registry = require("harnt.providers")
 
---- A minimal valid provider stub.
+--- A complete valid provider stub. The contract is total, so a registrable
+--- provider must define every capability; `pull_selection` satisfies the
+--- push-or-pull selection rule.
 ---@param name string
 local function stub(name)
   return {
@@ -15,6 +17,16 @@ local function stub(name)
     end,
     start = function()
       return {}
+    end,
+    cmd = {},
+    env = function()
+      return {}
+    end,
+    review = function() end,
+    health = function() end,
+    on_mention = function() end,
+    pull_selection = function()
+      return nil
     end,
   }
 end
@@ -50,15 +62,11 @@ describe("providers registry", function()
   end)
 
   it("is_available reflects detect()", function()
-    registry.register({
-      name = "off",
-      detect = function()
-        return false
-      end,
-      start = function()
-        return {}
-      end,
-    })
+    local off = stub("off")
+    off.detect = function()
+      return false
+    end
+    registry.register(off)
     assert.is_false(registry.is_available("off"))
     registry.register(stub("on"))
     assert.is_true(registry.is_available("on"))
@@ -77,6 +85,44 @@ describe("providers registry", function()
     end)
     assert.has_error(function()
       registry.register({ name = "x", detect = function() end }) -- missing start
+    end)
+  end)
+
+  it("rejects a provider missing a required capability method", function()
+    -- The contract is total: dropping any capability method is a registration
+    -- error, not a silent no-op.
+    for _, field in ipairs({ "cmd", "env", "review", "health", "on_mention" }) do
+      local p = stub("cap_" .. field)
+      p[field] = nil
+      -- The registered error message names the missing field, so match on it —
+      -- this also proves each field is individually enforced, not just one.
+      assert.has_error(
+        function()
+          registry.register(p)
+        end,
+        ('register_provider: provider "cap_%s" must define %s (%s)'):format(
+          field,
+          field,
+          field == "cmd" and "table or function" or "function"
+        )
+      )
+    end
+  end)
+
+  it("rejects a provider that serves the selection neither by push nor pull", function()
+    local p = stub("no_selection")
+    p.pull_selection = nil -- stub has no push_selection either
+    assert.has_error(function()
+      registry.register(p)
+    end)
+  end)
+
+  it("accepts a provider that serves the selection by push only", function()
+    local p = stub("pusher")
+    p.pull_selection = nil
+    p.push_selection = function() end
+    assert.has_no_error(function()
+      registry.register(p)
     end)
   end)
 end)

@@ -253,12 +253,22 @@ local function descriptor(path, root)
   return { label = vim.fn.fnamemodify(path, ":t"), path = rel, fsPath = path }
 end
 
+--- PULL: answer the current selection when codex asks. codex has no channel for
+--- us to push into — its native TUI *pulls* the editor context over the `/ide`
+--- unix socket (`getCurrentSelection`), which `_ide_context` shapes below. This
+--- declares that mechanism to the contract; `_ide_context` reads through it so the
+--- pull path has one source of truth.
+---@return harnt.context.Selection?
+function M.pull_selection()
+  return context.selection()
+end
+
 --- Build the `ideContext` payload from the live editor state: the active file
 --- with its selection, plus the open editors. 0-indexed LSP positions.
 ---@return table
 function M._ide_context()
   local root = context.workspace_roots()[1]
-  local sel = context.selection()
+  local sel = M.pull_selection()
   local active_path = sel and sel.path or vim.api.nvim_buf_get_name(0)
 
   ---@type table
@@ -401,6 +411,31 @@ function M.review(ctx)
     lines[#lines + 1] = ("- L%d: %s"):format(comment.line, comment.text)
   end
   ctx.send_text(table.concat(lines, "\n"))
+end
+
+--- @-mention the current file/selection into the native codex TUI. codex has no
+--- protocol at-mention notification, so we type an `@path` reference (codex's
+--- file-mention grammar) into the `--remote` terminal — the same `send_text` path
+--- `review` uses. A visual selection appends its line range as readable context.
+---@param ctx harnt.MentionContext
+function M.on_mention(ctx)
+  local sel = context.selection()
+  local path = sel and sel.path or vim.api.nvim_buf_get_name(0)
+  if path == "" then
+    return
+  end
+  local ref = "@" .. vim.fn.fnamemodify(path, ":~:.")
+  if sel then
+    ref = ref .. (" (lines %d–%d)"):format(sel.start.row, sel.finish.row)
+  end
+  ctx.send_text(ref)
+end
+
+--- No spawn-time env: the native TUI discovers the proxy via its `--remote` URL
+--- (see `cmd`) and the `/ide` socket by convention, not environment variables.
+---@return table<string, string>
+function M.env()
+  return {}
 end
 
 --- Whether the `codex` CLI is available.

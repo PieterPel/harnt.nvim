@@ -4,33 +4,27 @@
 
 local manager = require("harnt.manager")
 local registry = require("harnt.providers")
+local provider = require("tests.support.provider")
 
 local notifications
 local orig_notify
 
---- A synthetic provider so tests don't depend on a real agent being installed.
+--- A synthetic (complete, valid) provider so tests don't depend on a real agent.
+--- Built from the shared no-op fixture, overriding only availability + cmd.
 ---@param name string
 ---@param opts { available?: boolean, cmd?: string[] }
 local function make_provider(name, opts)
-  return {
-    name = name,
-    cmd = opts.cmd,
+  return provider(name, {
+    cmd = opts.cmd or {},
     detect = function()
       return opts.available ~= false
     end,
+    -- Shape A providers carry discovery env keyed off the session info; the
+    -- no-op fixture returns {}, so opt into a real env when there's a cmd.
     env = opts.cmd and function(info)
       return { PORT = tostring(info.port) }
     end or nil,
-    start = function()
-      return {
-        info = { host = "127.0.0.1", port = 4321, auth_token = "t", pid = 1 },
-        on = function() end,
-        respond = function() end,
-        interrupt = function() end,
-        stop = function() end,
-      }
-    end,
-  }
+  })
 end
 
 local function fake_terminal()
@@ -153,27 +147,18 @@ end)
 
 describe("manager.send", function()
   it("delegates to the provider's on_mention for running agents", function()
-    local mentioned = false
-    registry.register({
-      name = "mentioner",
-      detect = function()
-        return true
+    local mention_ctx
+    registry.register(provider("mentioner", {
+      on_mention = function(ctx)
+        mention_ctx = ctx
       end,
-      start = function()
-        return {
-          on = function() end,
-          respond = function() end,
-          interrupt = function() end,
-          stop = function() end,
-        }
-      end,
-      on_mention = function(_session)
-        mentioned = true
-      end,
-    })
+    }))
     manager.launch("mentioner", { open_terminal = fake_terminal })
     manager.send()
-    assert.is_true(mentioned)
+    -- The manager hands on_mention a MentionContext with both delivery primitives.
+    assert.is_table(mention_ctx)
+    assert.is_table(mention_ctx.session)
+    assert.is_function(mention_ctx.send_text)
   end)
 end)
 
@@ -185,26 +170,14 @@ describe("manager.review", function()
     end)
 
     local reviewed = false
-    registry.register({
-      name = "reviewer",
-      detect = function()
-        return true
-      end,
+    registry.register(provider("reviewer", {
       cmd = { "agent" },
-      start = function()
-        return {
-          on = function() end,
-          respond = function() end,
-          interrupt = function() end,
-          stop = function() end,
-        }
-      end,
       review = function(ctx)
         reviewed = true
         ctx.reject()
         ctx.send_text(("feedback: %d on %s"):format(#ctx.comments, tostring(ctx.path)))
       end,
-    })
+    }))
     manager.launch("reviewer", {
       open_terminal = function()
         return { buf = 0, win = 0, job = 1 }
@@ -241,26 +214,13 @@ describe("manager.review", function()
 
     local reviewed_by
     local function make_reviewer(name)
-      return {
-        name = name,
+      return provider(name, {
         cmd = { "agent" },
-        detect = function()
-          return true
-        end,
-        start = function()
-          return {
-            info = {},
-            on = function() end,
-            respond = function() end,
-            interrupt = function() end,
-            stop = function() end,
-          }
-        end,
         review = function(ctx)
           reviewed_by = name
           ctx.reject()
         end,
-      }
+      })
     end
     -- "alpha" sorts first, so running()[1] would pick it; the diff is beta's.
     registry.register(make_reviewer("alpha"))
@@ -275,17 +235,13 @@ describe("manager.review", function()
     assert.equals("beta", reviewed_by)
   end)
 
-  it("plain-rejects when the agent has no review capability", function()
+  it("plain-rejects when no agent is running to hand the review to", function()
+    -- `review` is a required capability now, so the only fallback is "no target":
+    -- with nothing running, a review just rejects the diff.
     local diff = require("harnt.services.diff")
     diff.set_presenter(function()
       return { teardown = function() end }
     end)
-    registry.register(make_provider("plain", { cmd = { "agent" } }))
-    manager.launch("plain", {
-      open_terminal = function()
-        return { buf = 0, win = 0, job = 1 }
-      end,
-    })
     local rejected = false
     local id = diff.open({ path = "/x", proposed = {} }, function(r)
       rejected = not r.accepted

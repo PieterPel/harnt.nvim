@@ -30,15 +30,7 @@ end)
 
 describe("harnt.register_provider", function()
   it("registers a provider into the registry", function()
-    harnt.register_provider({
-      name = "p",
-      detect = function()
-        return true
-      end,
-      start = function()
-        return {}
-      end,
-    })
+    harnt.register_provider(require("tests.support.provider")("p"))
     assert.is_true(registry.is_available("p"))
   end)
 end)

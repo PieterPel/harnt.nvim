@@ -74,6 +74,23 @@ e2e-codex-ide:
 e2e-agy-hooks:
     env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-agy-hooks.lua
 
+# Real-CLI e2e for the @-mention path (`:Harnt send` → on_mention). Claude has a
+# structured `at_mentioned`; asserts the real CLI receives the file+range and
+# answers from it. Needs `claude` authed + a trusted cwd. NOT part of `ci`.
+e2e-claude-mention:
+    env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-claude-mention.lua
+
+# Real-CLI e2e SPIKE for the Codex @-mention path: does typing `@path` into the
+# real codex TUI land as a mention or trip the file picker? Observational; drives
+# the real `codex` TUI. Needs `codex` authed. NOT part of `ci`.
+e2e-codex-mention:
+    env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-codex-mention.lua
+
+# Real-CLI e2e SPIKE for the agy @-mention path (same open question as Codex).
+# Drives the real `agy` TUI. Needs `agy` authed. NOT part of `ci`.
+e2e-agy-mention:
+    env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-agy-mention.lua
+
 # Publish the rock to luarocks.org. Needs LUAROCKS_API_KEY. Runs on tag in CI,
 # but works locally too: `LUAROCKS_API_KEY=... just publish`.
 publish:
