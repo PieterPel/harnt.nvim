@@ -55,7 +55,22 @@ This is the load-bearing bet, so it goes first. Our whole architecture assumes t
 > fine; *rendering the agent's chat ourselves* is the thing we refuse. (Codex's
 > `/ide` unix socket does exist but is context-only — see `CODEX.md`.)
 
-- **Right if:** the major agents keep shipping a native-TUI-plus-editor-callback mode, and new agents adopt it (the direction of travel — Claude, Codex, Antigravity (née Gemini CLI), Qwen all have it; Codex is actively making its `/ide` *more* automatic, citing Claude Code as the bar; and Google carried the Gemini CLI IDE Companion spec forward into Antigravity CLI rather than dropping it).
+> **Refinement (2026-07-20), from building OpenCode.** A *fourth* channel shape,
+> and the sharpest one yet: the agent hosts its **own HTTP server** and its native
+> TUI is a *client* of it (`opencode serve` + `opencode attach`). harnt joins as a
+> **second client** — tapping the `/event` SSE stream for diffs/approvals and
+> answering over HTTP — while the TUI drives turns and renders the chat. So the
+> reverse channel needn't point *into* the editor at all; it can be a shared bus
+> the editor dials into. The invariant holds regardless: *the native TUI renders
+> the chat; we only tap the editor-shaped traffic.* OpenCode also sharpened the
+> bet in a second way — it ships **both** a headless ACP surface (`opencode acp`,
+> the §7 non-goal) **and** the native-TUI+server surface, in one binary. That is
+> the fork this whole document describes, made concrete in a single tool: an ACP
+> client would consume `opencode acp` and lose fidelity; harnt consumes the server
+> and keeps the native TUI. A single-vendor proof that the two layers are
+> genuinely different bets.
+
+- **Right if:** the major agents keep shipping a native-TUI-plus-editor-callback mode, and new agents adopt it (the direction of travel — Claude, Codex, Antigravity (née Gemini CLI), Qwen, OpenCode all have it; Codex is actively making its `/ide` *more* automatic, citing Claude Code as the bar; and Google carried the Gemini CLI IDE Companion spec forward into Antigravity CLI rather than dropping it).
 - **Wrong if:** a genuinely popular agent ships **headless-only** (ACP/app-server as its *only* editor surface) and never adds a callback mode. That agent we structurally cannot host — see the non-goal below. If that becomes the norm rather than the exception, the bet is lost and the editor-drives-and-renders crowd was right.
 
 ### Bet 1 — The future is many agents, not one winner

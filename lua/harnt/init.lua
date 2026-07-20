@@ -79,6 +79,7 @@ function M.setup(opts)
   registry.register(require("harnt.providers.claude"))
   registry.register(require("harnt.providers.codex"))
   registry.register(require("harnt.providers.antigravity"))
+  registry.register(require("harnt.providers.opencode"))
   -- Route the diff review key to the manager (reject + send comments to agents).
   require("harnt.services.diff").set_review_handler(function(id)
     require("harnt.manager").review(id)

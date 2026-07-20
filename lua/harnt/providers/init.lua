@@ -46,12 +46,19 @@ local M = {}
 --- The contract is total on purpose: there are no silently-skippable capability
 --- methods (`review`/`health`/`on_mention`), because an absent method used to mean
 --- "this agent quietly can't do X and nobody noticed". Every provider implements
---- every capability, and `register()` refuses one that doesn't. The single
---- either/or is the editor **selection**: an agent obtains it either by *push*
---- (`push_selection`, sent on cursor move) or by *pull* (`pull_selection`,
---- answered on demand). Exactly one mechanism is required; declaring neither is a
---- registration error, so "does this agent see my selection?" can never silently
---- be "no".
+--- every capability, and `register()` refuses one that doesn't.
+---
+--- **Selection** has a required baseline and an optional ambient upgrade:
+---   * `on_mention` (required) is the baseline — every provider conveys the current
+---     file+selection to the agent when the user sends (`:Harnt send`), so "does
+---     this agent see my selection?" can never silently be "no".
+---   * `push_selection` / `pull_selection` (optional) make the agent aware of the
+---     selection *without* an explicit send — by pushing on cursor move (Claude) or
+---     answering on demand (Codex, Antigravity). Not every channel shape supports
+---     ambient context: OpenCode's server exposes no editor-context endpoint (and
+---     harnt is a pure client of it), so its selection rides the @mention only. A
+---     provider with neither is mention-only, and that's a legitimate — if slightly
+---     more explicit — interaction, not a silent gap.
 ---@class harnt.Provider
 ---@field name string unique registry key
 ---@field detect fun(): boolean CLI present + authenticated
@@ -60,9 +67,9 @@ local M = {}
 ---@field env fun(info: harnt.reverse_mcp.Info): table<string, string> env for the spawned TUI (reverse-MCP discovery vars; `{}` when none)
 ---@field review fun(ctx: harnt.ReviewContext) deliver diff-review feedback the agent's native way
 ---@field health fun(report: harnt.health.Report) provider-specific `:checkhealth harnt` probes
----@field on_mention fun(ctx: harnt.MentionContext) @-mention the current file/selection to the agent
----@field push_selection? fun(session: harnt.Session) PUSH: send a live selection update as the cursor moves. Provide this OR `pull_selection`.
----@field pull_selection? fun(): harnt.context.Selection? PULL: answer the current selection when the agent asks for it. Provide this OR `push_selection`.
+---@field on_mention fun(ctx: harnt.MentionContext) @-mention the current file/selection to the agent (required selection baseline)
+---@field push_selection? fun(session: harnt.Session) optional ambient upgrade — PUSH a live selection update as the cursor moves
+---@field pull_selection? fun(): harnt.context.Selection? optional ambient upgrade — answer the current selection when the agent asks (PULL)
 
 ---@type table<string, harnt.Provider>
 local registry = {}
@@ -102,16 +109,22 @@ local function validate(provider)
   require_field("health", { "function" })
   require_field("on_mention", { "function" })
 
-  -- Selection is push-or-pull: exactly one mechanism must be present, so an agent
-  -- can never silently fail to see the editor selection. Codex/Antigravity pull;
-  -- Claude pushes. A new provider is forced to answer "push or pull?".
-  assert(
-    type(provider.push_selection) == "function" or type(provider.pull_selection) == "function",
-    (
-      "register_provider: provider %q must serve the editor selection — define push_selection "
-      .. "(push on cursor move) or pull_selection (answer on demand)"
-    ):format(name)
-  )
+  -- Ambient selection (push_selection / pull_selection) is an OPTIONAL upgrade, so
+  -- only type-check it when present. The required selection baseline is on_mention
+  -- (above): every provider conveys the current file+selection when the user
+  -- sends, so an agent can never *silently* fail to see it. push/pull just make
+  -- the agent aware of the selection without an explicit send — and not every
+  -- channel shape can (OpenCode's server has no ambient editor-context endpoint;
+  -- its selection rides the @mention). See the class doc.
+  for _, field in ipairs({ "push_selection", "pull_selection" }) do
+    assert(
+      provider[field] == nil or type(provider[field]) == "function",
+      ("register_provider: provider %q field %s must be a function when present"):format(
+        name,
+        field
+      )
+    )
+  end
 end
 
 --- Register (or replace) a provider.

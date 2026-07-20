@@ -136,4 +136,19 @@ function M.content(value, is_error)
   return content(value, is_error or false)
 end
 
+--- Wrap several values as a multi-item text `content` array. Some tools return
+--- more than one text item — notably `openDiff`, whose success result is
+--- `{ "FILE_SAVED", <final content> }` (matching claudecode.nvim); a single-item
+--- response leaves the agent without the saved content and it re-prompts.
+---@param values any[]
+---@param is_error? boolean
+---@return table
+function M.texts(values, is_error)
+  local items = {}
+  for _, v in ipairs(values) do
+    items[#items + 1] = { type = "text", text = type(v) == "string" and v or vim.json.encode(v) }
+  end
+  return { content = items, isError = is_error or false }
+end
+
 return M

@@ -48,6 +48,7 @@
           pkgs.claude-code
           pkgs.codex
           pkgs.antigravity-cli
+          pkgs.opencode # free (MIT); no unfree allowlist entry needed
         ];
 
         # Export VIMRUNTIME so emmylua (CLI check + LS) can resolve Neovim's Lua

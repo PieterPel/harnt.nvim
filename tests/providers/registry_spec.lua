@@ -109,15 +109,18 @@ describe("providers registry", function()
     end
   end)
 
-  it("rejects a provider that serves the selection neither by push nor pull", function()
-    local p = stub("no_selection")
+  it("accepts a mention-only provider (no ambient push/pull selection)", function()
+    -- Ambient selection is an optional upgrade; on_mention is the required
+    -- baseline. A provider with neither push_selection nor pull_selection (e.g.
+    -- OpenCode, whose server has no editor-context endpoint) is still valid.
+    local p = stub("mention_only")
     p.pull_selection = nil -- stub has no push_selection either
-    assert.has_error(function()
+    assert.has_no_error(function()
       registry.register(p)
     end)
   end)
 
-  it("accepts a provider that serves the selection by push only", function()
+  it("accepts a provider that serves the selection by push", function()
     local p = stub("pusher")
     p.pull_selection = nil
     p.push_selection = function() end
