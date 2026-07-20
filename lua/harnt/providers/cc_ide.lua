@@ -40,7 +40,9 @@ function M.tools(_ctx)
       handler = function(args, respond)
         local target = args.new_file_path or args.old_file_path
         local proposed = vim.split(args.new_file_contents or "", "\n")
-        diff.open({ path = target, proposed = proposed }, function(result)
+        -- Tag with the provider so review feedback routes to Claude's TUI even
+        -- when other agents are running (this surface is Claude-only).
+        diff.open({ path = target, proposed = proposed, origin = "claude" }, function(result)
           respond(mcp.content(result.accepted and "FILE_SAVED" or "DIFF_REJECTED"))
         end)
       end,

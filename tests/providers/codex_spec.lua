@@ -8,6 +8,15 @@ describe("codex provider", function()
     assert.is_boolean(codex.detect())
   end)
 
+  it("health() emits diagnostics via the report adapter", function()
+    local calls = {}
+    local function rec(m)
+      calls[#calls + 1] = m
+    end
+    codex.health({ ok = rec, warn = rec, error = rec, info = rec })
+    assert.is_true(#calls > 0)
+  end)
+
   it("cmd() launches the native TUI against the proxy ws endpoint", function()
     local cmd =
       codex.cmd({ info = { remote_url = "ws://127.0.0.1:4500", port = 4500 } } --[[@as harnt.codex.Session]])

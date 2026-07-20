@@ -26,14 +26,24 @@ typecheck:
 test:
     busted
 
+# Clean-room load smoke: harnt loads + registers + :Harnt + :checkhealth with
+# NOTHING else on the runtimepath (no flake, no user plugins). Deterministic.
+smoke:
+    env -u LUA_PATH -u LUA_CPATH nvim --clean -l {{ justfile_directory() }}/scripts/smoke-clean-load.lua
+
 # The full gate — exactly what CI runs.
-ci: fmt-check lint typecheck test
+ci: fmt-check lint typecheck test smoke
 
 # Launch a clean Neovim with ONLY harnt loaded for a quick manual try, with
 # convenience keymaps + an on-launch help popup (see scripts/try-init.lua). Works
 # with any nvim — including the dev shell's bare one, which lacks your plugins.
 try:
     env -u LUA_PATH -u LUA_CPATH nvim -u {{ justfile_directory() }}/scripts/try-init.lua
+
+# Clean Neovim in a seeded temp project, staged for recording the README demo
+# (see DEMO.md for the storyboard). Needs an agent CLI authed to actually drive.
+demo:
+    env -u LUA_PATH -u LUA_CPATH nvim -u {{ justfile_directory() }}/scripts/demo-init.lua
 
 # Real-CLI e2e smoke vs Claude (needs `claude` on PATH + a trusted cwd).
 # Nondeterministic + real API calls; deliberately NOT part of `ci`.
@@ -67,4 +77,4 @@ e2e-agy-hooks:
 # Publish the rock to luarocks.org. Needs LUAROCKS_API_KEY. Runs on tag in CI,
 # but works locally too: `LUAROCKS_API_KEY=... just publish`.
 publish:
-    luarocks upload harnt-scm-1.rockspec --api-key "${LUAROCKS_API_KEY}"
+    luarocks upload harnt.nvim-scm-1.rockspec --api-key "${LUAROCKS_API_KEY}"

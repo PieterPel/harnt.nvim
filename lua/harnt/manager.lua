@@ -138,10 +138,15 @@ function M.review(id)
     diff.reject(id)
   end
 
-  -- Deliver to a running instance. Attributing a diff to its originating session
-  -- across multiple agents is future work; today there is effectively one.
-  local names = M.running()
-  local target = names[1] and instances[names[1]] or nil
+  -- Route to the agent that opened this diff (tagged via the diff's origin), so
+  -- feedback reaches the right TUI when several agents run at once. Fall back to
+  -- the sole running instance when the diff wasn't tagged.
+  local origin = diff.origin(id)
+  local target = (origin and instances[origin]) or nil
+  if not target then
+    local names = M.running()
+    target = names[1] and instances[names[1]] or nil
+  end
   local provider = target and registry.get(target.name) or nil
 
   if not (target and provider and provider.review) then

@@ -21,6 +21,15 @@ describe("claude.detect", function()
   it("returns a boolean", function()
     assert.is_boolean(claude.detect())
   end)
+
+  it("health() emits diagnostics via the report adapter", function()
+    local calls = {}
+    local function rec(m)
+      calls[#calls + 1] = m
+    end
+    claude.health({ ok = rec, warn = rec, error = rec, info = rec })
+    assert.is_true(#calls > 0)
+  end)
 end)
 
 describe("claude.env", function()

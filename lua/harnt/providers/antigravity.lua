@@ -215,7 +215,7 @@ function M._handle_tool_use(call, respond)
 
   if EDIT_TOOLS[name] then
     local edit = M._normalize_edit(name, args)
-    diff.open_review({ path = edit.path, patch = edit.patch }, function(result)
+    diff.open_review({ path = edit.path, patch = edit.patch, origin = M.name }, function(result)
       if result.accepted then
         change_log.record({
           path = edit.path,
@@ -379,6 +379,35 @@ end
 ---@return boolean
 function M.detect()
   return vim.fn.executable("agy") == 1
+end
+
+--- `:checkhealth harnt` probes for Antigravity.
+---@param report harnt.health.Report
+function M.health(report)
+  if vim.fn.executable("agy") ~= 1 then
+    report.error("agy CLI not found on PATH", "Install the Antigravity CLI so `agy` is runnable.")
+    return
+  end
+  report.ok("agy CLI: " .. vim.fn.exepath("agy"))
+
+  if vim.fn.executable("nc") == 1 then
+    report.ok("nc found (the hook bridge shells out to `nc -U`)")
+  else
+    report.error(
+      "nc (netcat) not found on PATH",
+      "The lifecycle-hook bridge uses `nc -U <socket>`; install netcat."
+    )
+  end
+
+  local cwd = vim.uv.cwd() or "."
+  if vim.uv.fs_access(cwd, "W") then
+    report.ok("workspace writable (.agents/hooks.json is merged here): " .. cwd)
+  else
+    report.warn(
+      "workspace not writable: " .. cwd,
+      "harnt injects .agents/hooks.json here (restored on stop); check permissions."
+    )
+  end
 end
 
 return M

@@ -105,7 +105,7 @@ Everything above doubles as agent infrastructure. To make it explicit:
 - [ ] `.stylua.toml`
 - [ ] `selene.toml` (+ `vim` std lib)
 - [ ] `.luarc.json` (shared: LSP + `emmylua_check`)
-- [ ] `harnt-scm-1.rockspec` with a `test` block
+- [ ] `harnt.nvim-scm-1.rockspec` with a `test` block
 - [ ] `.busted`
 - [ ] `lux.toml` *(optional, if adopting Lux locally)*
 - [ ] `AGENTS.md` (+ `CLAUDE.md`)

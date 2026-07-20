@@ -233,6 +233,48 @@ describe("manager.review", function()
     assert.is_truthy(sent:find("feedback: 1 on /tmp/f.lua"))
   end)
 
+  it("routes review feedback to the diff's origin provider, not running()[1]", function()
+    local diff = require("harnt.services.diff")
+    diff.set_review_presenter(function()
+      return { teardown = function() end }
+    end)
+
+    local reviewed_by
+    local function make_reviewer(name)
+      return {
+        name = name,
+        cmd = { "agent" },
+        detect = function()
+          return true
+        end,
+        start = function()
+          return {
+            info = {},
+            on = function() end,
+            respond = function() end,
+            interrupt = function() end,
+            stop = function() end,
+          }
+        end,
+        review = function(ctx)
+          reviewed_by = name
+          ctx.reject()
+        end,
+      }
+    end
+    -- "alpha" sorts first, so running()[1] would pick it; the diff is beta's.
+    registry.register(make_reviewer("alpha"))
+    registry.register(make_reviewer("beta"))
+    manager.launch("alpha", { open_terminal = fake_terminal })
+    manager.launch("beta", { open_terminal = fake_terminal })
+
+    local id = diff.open_review({ path = "/x", patch = "y", origin = "beta" }, function() end)
+    manager.review(id)
+
+    diff.set_review_presenter(nil)
+    assert.equals("beta", reviewed_by)
+  end)
+
   it("plain-rejects when the agent has no review capability", function()
     local diff = require("harnt.services.diff")
     diff.set_presenter(function()

@@ -126,6 +126,22 @@ describe("diff comments", function()
     diff.reject(id)
   end)
 
+  it("tags and exposes the origin provider, and folds comments into the result", function()
+    local got
+    local id = diff.open_review(
+      { path = "/tmp/f.lua", patch = "@@\n-a\n+b", origin = "codex" },
+      function(r)
+        got = r
+      end
+    )
+    assert.equals("codex", diff.origin(id))
+    diff.add_comment(id, 3, "guard nil")
+    diff.reject(id)
+    assert.is_false(got.accepted)
+    assert.equals("guard nil", got.comments[1].text)
+    assert.is_nil(diff.origin(id)) -- gone after teardown
+  end)
+
   it("returns empty comments and nil target for an unknown diff", function()
     assert.same({}, diff.comments(9999))
     assert.is_nil(diff.target(9999))

@@ -27,6 +27,7 @@ local review_handler = nil
 ---@field path string absolute path the proposal targets
 ---@field proposed string[] proposed new content
 ---@field original? string[] baseline; defaults to the file's current on-disk content
+---@field origin? string opaque tag naming who opened it (provider name); routes review feedback back to the right agent when several run at once
 
 ---@class harnt.diff.Result
 ---@field accepted boolean
@@ -54,6 +55,7 @@ local review_handler = nil
 ---@field callback fun(result: harnt.diff.Result)
 ---@field comments { line: integer, text: string }[]
 ---@field review? boolean review-only: accept resolves without writing (the agent applies)
+---@field origin? string who opened this diff (provider name), for feedback routing
 
 ---@type table<integer, harnt.diff.Entry>
 local entries = {}
@@ -288,6 +290,7 @@ function M.open(spec, callback)
     presentation = presentation,
     callback = callback,
     comments = {},
+    origin = spec.origin,
   }
   return id
 end
@@ -295,6 +298,7 @@ end
 ---@class harnt.diff.ReviewSpec
 ---@field path string file the change targets (for labeling)
 ---@field patch string|string[] pre-rendered change (unified diff or content) shown in a filetype=diff buffer
+---@field origin? string who opened it (provider name), for feedback routing
 
 --- Open a *review-only* diff: render a pre-supplied `patch` and resolve accept/
 --- reject WITHOUT writing to disk. For agents that apply their own edits and only
@@ -320,6 +324,7 @@ function M.open_review(spec, callback)
     callback = callback,
     comments = {},
     review = true,
+    origin = spec.origin,
   }
   return id
 end
@@ -423,6 +428,15 @@ end
 function M.target(id)
   local entry = entries[id]
   return entry and entry.spec.path or nil
+end
+
+--- The origin (provider name) that opened a diff, if it was tagged — lets the
+--- manager route review feedback to the right agent when several run at once.
+---@param id integer
+---@return string?
+function M.origin(id)
+  local entry = entries[id]
+  return entry and entry.origin or nil
 end
 
 --- Register the frontend handler for the review key (receives the diff id and

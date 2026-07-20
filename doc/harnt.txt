@@ -1,0 +1,169 @@
+*harnt.txt*              Drive any native-TUI coding agent in Neovim, losslessly
+
+                                                                        *harnt*
+harnt.nvim ~
+
+Run any coding agent (Claude Code, Codex, Antigravity, …) inside Neovim at full
+native fidelity. Each agent keeps its own terminal UI; harnt hosts the
+editor-callback channel it already speaks and unifies the shared editor side —
+context, diffs, approvals, apply, and one set of keymaps. harnt never renders the
+agent's chat, so no native feature is lost.
+
+==============================================================================
+CONTENTS                                                       *harnt-contents*
+
+    1. Introduction ............................ |harnt-introduction|
+    2. Requirements ............................ |harnt-requirements|
+    3. Setup ................................... |harnt-setup|
+    4. Commands ................................ |harnt-commands|
+    5. Keymaps ................................. |harnt-keymaps|
+    6. Providers ............................... |harnt-providers|
+    7. Health .................................. |harnt-health|
+    8. Extending ............................... |harnt-extending|
+
+==============================================================================
+1. INTRODUCTION                                            *harnt-introduction*
+
+Modern coding agents each ship a terminal UI plus a way to reach into the editor
+("reverse-MCP"): open this diff, give me the selection, apply these edits, ask
+the user to approve. The wires differ per vendor; the shape is the same. harnt
+hosts that channel for many agents behind one shared layer, while the agent's own
+TUI runs untouched in a terminal split.
+
+This is the opposite of ACP-style tools: those unify the agent protocol and drop
+deep features (plan mode, slash commands, /compact, resume). harnt unifies the
+editor side only, so those features stay in the agent's own TUI. See BET.md.
+
+==============================================================================
+2. REQUIREMENTS                                            *harnt-requirements*
+
+- Neovim 0.10+
+- The CLI for each agent you use, installed and authenticated:
+  `claude` (Claude Code), `codex` (Codex), `agy` (Antigravity).
+- `nc` (netcat) — only for the Antigravity hook bridge.
+
+Run |:checkhealth| `harnt` to see, per provider, what is present and missing.
+
+==============================================================================
+3. SETUP                                                          *harnt-setup*
+
+>lua
+    require("harnt").setup({})
+<
+This registers the built-in providers (claude, codex, antigravity). Options:
+
+>lua
+    require("harnt").setup({
+      keymaps = {
+        diff = {
+          accept  = "<F9>",
+          reject  = "<F10>",
+          comment = "<leader>c",
+          review  = "<leader>R",
+        },
+      },
+      diff      = { presenter = nil },  -- swap the diff UI (default: vimdiff)
+      approvals = { chooser  = nil },   -- swap the prompt (default: vim.ui.select)
+    })
+<
+                                                              *harnt.setup()*
+require("harnt").setup({opts})
+    Configure harnt and register the built-in providers. Returns the merged
+    config. `opts.diff.presenter` and `opts.approvals.chooser` are injectable UI
+    seams; `opts.keymaps.diff` overrides the buffer-local diff keys.
+
+                                                    *harnt.register_provider()*
+require("harnt").register_provider({provider})
+    Register a custom agent. See |harnt-extending| and PROVIDERS.md.
+
+                                                          *harnt.statusline()*
+require("harnt").statusline()
+    A statusline fragment naming running providers (empty when idle):
+    `%{v:lua.require'harnt'.statusline()}`
+
+==============================================================================
+4. COMMANDS                                                    *harnt-commands*
+
+                                                                       *:Harnt*
+:Harnt open [provider]      Launch a provider's TUI in a split and host its
+                            channel. Default provider: `claude`.
+:Harnt toggle [provider]    Show/hide (or launch) a provider's terminal window.
+:Harnt stop [provider]      Stop one provider, or all providers if omitted.
+:Harnt send                 Send the current file/selection to running agents
+                            (@-mention), the provider's native way.
+:Harnt accept               Accept the current diff.
+:Harnt reject               Reject the current diff.
+:Harnt review               Reject the current diff and deliver your inline
+                            comments as feedback (each provider its native way:
+                            Codex/Claude type it into the TUI, Antigravity folds
+                            it into the deny reason).
+:Harnt changes              Browse the session change-log (read-only) — every
+                            file change the agent made, including auto-applied
+                            ones.
+:Harnt health               Open |:checkhealth| for harnt.
+
+==============================================================================
+5. KEYMAPS                                                      *harnt-keymaps*
+
+These are buffer-local, active only inside a diff/review window (the winbar shows
+them). Configure via `opts.keymaps.diff`.
+
+    <F9>            Accept the diff.
+    <F10>           Reject the diff.
+    <leader>c       Comment on the current line (prompts for text).
+    <leader>R       Submit review: reject and send the comments as feedback.
+
+Approval popups (allow/deny) use `vim.ui.select` by default; the v1 flow maps
+allow-once / allow-always / deny-once / deny-always.
+
+Launch/toggle keymaps are yours to define — map to the |:Harnt| subcommands, e.g.
+>lua
+    vim.keymap.set("n", "<leader>ac", "<cmd>Harnt open claude<cr>")
+<
+==============================================================================
+6. PROVIDERS                                                  *harnt-providers*
+
+                                                        *harnt-provider-claude*
+Claude Code ~
+    WebSocket IDE integration. harnt writes `~/.claude/ide/<port>.lock` and hosts
+    the server the CLI connects into (openDiff / getDiagnostics / selection).
+    Edits are also recorded via an injected PostToolUse hook, so auto-applied
+    changes still appear in `:Harnt changes`.
+
+                                                         *harnt-provider-codex*
+Codex ~
+    harnt spawns `codex app-server` (stdio) and launches the native TUI with
+    `codex --remote`, tapping the stream for file changes + approvals. A separate
+    `/ide` unix socket ($TMPDIR/codex-ipc/ipc-<uid>.sock) feeds the agent your
+    live selection and open files. See CODEX.md.
+
+                                                   *harnt-provider-antigravity*
+Antigravity (agy) ~
+    harnt merges a `harnt` hook into `.agents/hooks.json` (non-destructively;
+    restored on stop). PreToolUse gates edits (blocking = interactive diffs) and
+    commands; PreInvocation injects editor context. The hook bridges to harnt
+    over a unix socket via `nc -U`. Runs `agy` interactively. See ANTIGRAVITY.md.
+
+==============================================================================
+7. HEALTH                                                        *harnt-health*
+
+>vim
+    :checkhealth harnt
+<
+Reports Neovim version and, per registered provider, its own probes: the CLI
+binary (and path), any extra dependency (e.g. `nc` for Antigravity), and whether
+discovery paths are writable. A provider that is registered but unavailable
+(`detect()` false) is flagged with advice.
+
+==============================================================================
+8. EXTENDING                                                  *harnt-extending*
+
+Add an agent with a Lua table registered via |harnt.register_provider()|. A
+provider implements `name`, `detect()`, `start(ctx)`, and optionally `cmd`/`env`
+(to spawn its TUI), `review`, `on_selection`, `on_mention`, and `health`. Most
+providers are a thin specialization of the reverse-MCP base and delegate to the
+shared services (`context` / `diff` / `approvals` / `apply` / `changes`).
+
+Full contract, worked example, and a checklist: PROVIDERS.md in the repo.
+
+vim:tw=78:ts=8:noet:ft=help:norl:

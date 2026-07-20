@@ -409,6 +409,33 @@ function M.detect()
   return vim.fn.executable("codex") == 1
 end
 
+--- `:checkhealth harnt` probes for Codex.
+---@param report harnt.health.Report
+function M.health(report)
+  if vim.fn.executable("codex") ~= 1 then
+    report.error(
+      "codex CLI not found on PATH",
+      "Install Codex (https://github.com/openai/codex) so `codex` is runnable."
+    )
+    return
+  end
+  report.ok("codex CLI: " .. vim.fn.exepath("codex"))
+  report.info(
+    "Diffs/approvals ride `codex app-server` (proxied); the native TUI is `codex --remote`."
+  )
+
+  local dir = ide_socket_path()
+  pcall(vim.fn.mkdir, dir, "p")
+  if vim.fn.isdirectory(dir) == 1 and vim.uv.fs_access(dir, "W") then
+    report.ok("/ide context socket dir writable: " .. dir)
+  else
+    report.warn(
+      "/ide context socket dir not writable: " .. dir,
+      "Editor context (selection/open files) needs this; check $TMPDIR permissions."
+    )
+  end
+end
+
 --- The native-TUI launch command (dynamic: needs the proxy's ws port). The
 --- manager spawns this in a terminal split; it connects back to our proxy.
 ---@param session harnt.codex.Session
@@ -447,9 +474,12 @@ function M.start(ctx)
     open_review = function(file_changes, resolve)
       local path = (file_changes[1] and file_changes[1].path) or "(codex change)"
       bus:emit(events.TYPES.diff_ready, { provider = { changes = file_changes }, path = path })
-      diff.open_review({ path = path, patch = render_patch(file_changes) }, function(result)
-        resolve(result.accepted)
-      end)
+      diff.open_review(
+        { path = path, patch = render_patch(file_changes), origin = M.name },
+        function(result)
+          resolve(result.accepted)
+        end
+      )
     end,
     request_command = function(params, resolve)
       approvals.request({

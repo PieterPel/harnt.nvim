@@ -13,7 +13,7 @@ local M = {}
 ---@field chooser? harnt.approvals.Chooser how approval prompts are shown
 
 ---@class harnt.KeymapConfig
----@field diff? { accept?: string, reject?: string } diff accept/reject keys
+---@field diff? { accept?: string, reject?: string, comment?: string, review?: string } diff review keys (buffer-local to the diff/review windows)
 
 ---@class harnt.Config
 ---@field diff harnt.DiffConfig

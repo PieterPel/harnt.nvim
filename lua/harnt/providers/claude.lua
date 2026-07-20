@@ -144,6 +144,31 @@ function M.detect()
   return vim.fn.executable("claude") == 1
 end
 
+--- `:checkhealth harnt` probes for Claude.
+---@param report harnt.health.Report
+function M.health(report)
+  if vim.fn.executable("claude") ~= 1 then
+    report.error(
+      "claude CLI not found on PATH",
+      "Install Claude Code (https://claude.com/claude-code) so `claude` is runnable."
+    )
+    return
+  end
+  report.ok("claude CLI: " .. vim.fn.exepath("claude"))
+
+  local dir = ide_dir()
+  pcall(vim.fn.mkdir, dir, "p")
+  if vim.fn.isdirectory(dir) == 1 and vim.uv.fs_access(dir, "W") then
+    report.ok("IDE lockfile dir writable: " .. dir)
+  else
+    report.warn(
+      "IDE lockfile dir not writable: " .. dir,
+      "Claude discovers harnt via a lockfile here; check permissions or $CLAUDE_CONFIG_DIR."
+    )
+  end
+  report.info("Auth is handled by the claude CLI itself (not checked here).")
+end
+
 --- Start a Claude reverse-MCP session, wiring the PostToolUse edit-recording hook.
 ---@param ctx? harnt.SessionContext
 ---@return harnt.claude.Session
