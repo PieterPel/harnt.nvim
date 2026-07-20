@@ -129,8 +129,8 @@ appears. The keys are the same for every agent.
 
 | Key | Action |
 |---|---|
-| `<F9>` | accept the diff |
-| `<F10>` | reject the diff |
+| `<leader>a` | accept the diff |
+| `<leader>r` | reject the diff |
 | `<leader>c` | comment on the current line |
 | `<leader>R` | submit review (reject + send comments as feedback) |
 
@@ -138,7 +138,7 @@ All four are configurable:
 
 ```lua
 require("harnt").setup({
-  keymaps = { diff = { accept = "<F9>", reject = "<F10>", comment = "<leader>c", review = "<leader>R" } },
+  keymaps = { diff = { accept = "<leader>a", reject = "<leader>r", comment = "<leader>c", review = "<leader>R" } },
   -- diff = { presenter = fn },          -- swap the diff UI (default: side-by-side vimdiff)
   -- approvals = { chooser = fn },       -- swap the approval prompt (default: vim.ui.select)
 })

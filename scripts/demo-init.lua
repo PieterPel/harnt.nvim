@@ -51,7 +51,7 @@ local help = table.concat({
   "",
   "  <leader>ac / ax / ag   open Claude / Codex / Antigravity",
   "  <leader>as             send this file (or selection) to the agent",
-  "  F9 / F10               accept / reject a proposed diff",
+  "  <leader>a / <leader>r  accept / reject a proposed diff",
   "  <leader>c  / <leader>R comment on a line / submit review",
   "  <leader>aC             browse the change-log",
   "",

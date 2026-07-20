@@ -48,6 +48,11 @@
           pkgs.claude-code
           pkgs.codex
           pkgs.antigravity-cli
+          pkgs.opencode
+
+          # creating the gifs
+          pkgs.vhs
+          pkgs.ffmpeg
         ];
 
         # Export VIMRUNTIME so emmylua (CLI check + LS) can resolve Neovim's Lua

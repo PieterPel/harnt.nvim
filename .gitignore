@@ -12,5 +12,10 @@ lua_modules/
 # Neovim helptags (generated from doc/*.txt)
 doc/tags
 
+# git worktrees (parallel checkouts; never lint/format/track these)
+.worktrees/
+
 # OS cruft
 .DS_Store
+.env
+assets/

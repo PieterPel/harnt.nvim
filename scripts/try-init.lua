@@ -28,7 +28,7 @@ local help = table.concat({
   "  <leader>ho   open claude          (or :Harnt open claude)",
   "  <leader>ht   toggle its terminal",
   "  <leader>hs   send file/selection to claude  (visual or normal)",
-  "  F9 / F10     accept / reject a proposed diff",
+  "  <leader>a/r  accept / reject a proposed diff",
   "  <leader>hq   stop      <leader>h?  checkhealth",
 }, "\n")
 

@@ -171,7 +171,7 @@ describe("diff default presenter", function()
     assert.is_truthy(winbar:find("accept"))
 
     diff.reject(id)
-    diff.set_keys({ accept = "<F9>", reject = "<F10>" }) -- restore default
+    diff.set_keys({ accept = "<leader>a", reject = "<leader>r" }) -- restore default
   end)
 end)
 

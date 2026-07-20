@@ -62,7 +62,8 @@ local entries = {}
 local next_id = 0
 
 --- Keys shown in the winbar + bound in the diff (config-settable).
-local keys = { accept = "<F9>", reject = "<F10>", comment = "<leader>c", review = "<leader>R" }
+local keys =
+  { accept = "<leader>a", reject = "<leader>r", comment = "<leader>c", review = "<leader>R" }
 
 --- Override the diff keys (wired from user config).
 ---@param opts { accept?: string, reject?: string, comment?: string, review?: string }

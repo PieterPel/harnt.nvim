@@ -68,6 +68,6 @@ describe("config.setup", function()
     local win = vim.fn.win_findbuf(diff.proposed_bufnr(id))[1]
     assert.is_truthy(vim.wo[win].winbar:find("gA"))
     diff.reject(id)
-    diff.set_keys({ accept = "<F9>", reject = "<F10>" }) -- restore default
+    diff.set_keys({ accept = "<leader>a", reject = "<leader>r" }) -- restore default
   end)
 end)

@@ -23,8 +23,8 @@ Keep it tight — one loop per agent, same keys throughout.
 3. **Ask it to work** — type in the agent's TUI:
    *"Fix the off-by-one in fizzbuzz.lua and add a short doc comment."*
 4. **The diff appears in Neovim** (not a chat box) — the winbar shows
-   `F9 accept · F10 reject · <leader>c comment · <leader>R review`.
-5. **Accept with `F9`.** The file updates; the agent continues in its own TUI.
+   `<leader>a accept · <leader>r reject · <leader>c comment · <leader>R review`.
+5. **Accept with `<leader>a`.** The file updates; the agent continues in its own TUI.
 6. **The payoff line:** switch agents — `<leader>ax` (Codex) — and show the
    *same keys* drive its diff. This is the whole pitch: one editor surface, every
    agent, native TUIs intact.

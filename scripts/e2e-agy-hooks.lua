@@ -7,13 +7,14 @@
 -- provider path (`_on_hook` → `_handle_tool_use` → the `diff` review) and only
 -- inject the review VERDICT (accept / reject) via a wrapped `diff.open_review`.
 --
--- Two phases isolate our gate as the sole decider:
---   * REJECT the diff  → agy must NOT write the file.
---   * ACCEPT the diff  → provider replies allow + `permissionOverrides`, so agy's
---                        own permission is satisfied by our accept and it writes.
--- Together they prove agy obeys harnt's verdict both ways, in the interactive mode
--- harnt actually uses. We also harvest the real `toolCall.args` and confirm they
--- map through the normalizer.
+-- agy runs with `--mode accept-edits`, which disables agy's OWN permission
+-- prompt — so harnt's PreToolUse hook is the SOLE thing that can gate the write.
+-- Two phases then prove the gate is real, not cosmetic:
+--   * REJECT the diff  → agy must NOT write the file (our deny hard-blocks).
+--   * ACCEPT the diff  → agy writes the file (our allow lets it through).
+-- This is exactly the config the recorded demo uses, so a pass here means the
+-- demo's diff gate genuinely controls the agent. We also harvest the real
+-- `toolCall.args` and confirm they map through the normalizer.
 --
 -- Run from a trusted repo root:  just e2e-agy-hooks   (needs `agy` authed + `nc`).
 -- Nondeterministic (real model) + real API calls, so NOT part of `just ci`.
@@ -91,16 +92,25 @@ local function run_agy(accept)
   local session = agy.start({ cwd = ws })
   log(("[%s] session up; hooks at %s/.agents/hooks.json"):format(phase, ws))
 
-  local job = vim.fn.jobstart(
-    { "agy", "--new-project", "-i", "Create a file named hello.txt containing exactly: hi there" },
-    {
-      cwd = ws,
-      pty = true,
-      width = 120,
-      height = 40,
-      env = { TERM = "xterm-256color" },
-    }
-  )
+  -- `--mode accept-edits` turns OFF agy's own permission prompt, so harnt's
+  -- PreToolUse hook is the ONLY thing that can gate the write. That's what makes
+  -- this decisive: if reject still blocks and accept still writes here, the gate
+  -- is real (not merely a second dialog on top of agy's own), and the recorded
+  -- demo (which uses the same mode) is honest.
+  local job = vim.fn.jobstart({
+    "agy",
+    "--new-project",
+    "--mode",
+    "accept-edits",
+    "-i",
+    "Create a file named hello.txt containing exactly: hi there",
+  }, {
+    cwd = ws,
+    pty = true,
+    width = 120,
+    height = 40,
+    env = { TERM = "xterm-256color" },
+  })
   if job <= 0 then
     log("FAIL: could not launch agy")
     os.exit(1)

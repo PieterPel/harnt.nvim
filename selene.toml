@@ -3,7 +3,7 @@ std = "lua51+vim+busted"
 
 # Keep the linter to our own code: never descend into the direnv-materialized
 # flake inputs (nixpkgs et al.) or nix build outputs.
-exclude = [".direnv/**", "result/**", ".git/**"]
+exclude = [".direnv/**", "result/**", ".git/**", ".worktrees/**"]
 
 [lints]
 # luassert extends the base `assert` with fields (assert.is_table, assert.has_no.errors,
