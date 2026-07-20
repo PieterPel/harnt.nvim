@@ -76,6 +76,7 @@ kept honest):
 - `filetail.lua` — append-only file tail (uv timer + line buffer). Reads **Claude**'s PostToolUse hook output.
 - `protobuf.lua` — minimal protobuf wire codec (pure Lua). For **Antigravity**'s language-server (stdin `Metadata` frame + the `connect+proto` ExtensionServer channel).
 - `http.lua` — *(being built)* local HTTP server + a **Connect** (`connect+proto`) layer. Hosts **Antigravity**'s `ExtensionServerService` (the editor-side callbacks the exa language-server dials). No longer "Codex/Gemini SSE" — that premise was wrong (see CODEX.md / ANTIGRAVITY.md).
+- `httpclient.lua` — local HTTP/1.1 **client** + an **SSE** (Server-Sent-Events) reader (chunked-transfer decode + `data:` framing). The dial-*out* counterpart to `http.lua`: for **OpenCode**, whose own TUI is a client of an HTTP server the agent hosts (`opencode serve`), harnt joins as a second client, tapping `GET /event` and answering approvals over HTTP. Pure Lua on `vim.uv` (see OPENCODE.md).
 
 **Deliberate stance:** pure Lua, in-process, on `vim.uv`. No mandatory Node/Bun runtime, no mandatory daemon (BET.md #4). The one *optional* exception under consideration is `starwing/lua-protobuf` (C) for the Antigravity provider only, if the hand-rolled `protobuf.lua` proves unmaintainable — core stays pure Lua.
 
@@ -170,6 +171,7 @@ Shipping **two agents on two different transports** in v1 is the whole point: it
 | **Claude** | WebSocket | IDE integration (lockfile) | v1 (gate) |
 | **Codex** | stdio proxy + ws | `app-server` + native TUI (`codex --remote`) | v1 (gate) |
 | Antigravity | lifecycle hooks (`.agents/hooks.json`) | native `agy` TUI + `PreToolUse` diff/approval gate + `PreInvocation` context | built — see `ANTIGRAVITY.md` (the exa-LS path was the wrong process; hooks are the live path) |
+| **OpenCode** | HTTP-server-hosted-by-agent + SSE (harnt is a client) | native `opencode` TUI (`opencode attach`) + `/event` tap (permissions/diffs) | built — see `OPENCODE.md` (fourth channel shape: agent hosts the server, editor is a client) |
 | Qwen | local-HTTP | Gemini/Antigravity companion spec | fast-follow |
 | ~~Gemini CLI~~ | local-HTTP | IDE companion | **dropped** — consumer access ended 2026-06-18; superseded by Antigravity CLI |
 | Cursor | ? | unknown | research spike first |
@@ -205,6 +207,24 @@ Order matters. Fake provider exists early so services work proceeds without real
   (`transport/reqsock` ← `nc -U`). Still not a config table — a third *channel
   shape* (blocking child-process hook) on the same shared services. Qwen
   (companion-spec) remains the fast-follow that tests the table hypothesis.
+- [x] **M5.5 — OpenCode (the fourth channel shape — agent hosts the server).**
+  harnt spawns `opencode serve` (HTTP+SSE transport), launches the native TUI via
+  `opencode attach`, and joins as a *second client* of that server: a pure-Lua
+  HTTP client (`transport/httpclient`) taps `GET /event` with full editor-side
+  parity: an edit/write/patch `permission.v2.asked` becomes an **interactive diff
+  review** (the change reconstructed by correlating `source.callID` with the
+  cached `tool.called` input; reject carries comments as free-text feedback), a
+  command permission uses the four-way approval popup, `session.diff` → `changes`,
+  and `on_mention` pushes an `@path#Lstart-end` reference via `POST
+  /tui/append-prompt`. Crucially, **the TUI drives turns; harnt only observes** —
+  the headless server admits prompts but doesn't
+  execute them without a driving client, which is exactly the on-thesis split.
+  OpenCode also ships `opencode acp` (the §7 non-goal); we deliberately use the
+  native-TUI+server surface instead. Confirms the shared services absorbed a
+  *fourth* channel shape (agent-hosts-HTTP-server, editor-is-client) without a
+  fork. **Acceptance: wire + transport verified against real `opencode` (`just
+  e2e-opencode`); permission/diff routing unit-tested; the live turn-driving hop
+  is the interactive part of the no-feature-loss check.** See `OPENCODE.md`.
 - [ ] **M6 — (Optional) persistence.** State file or lightweight SQLite for session listing/resume, strictly opt-in. No mandatory daemon. Cross-instance attach only if it stays in-process-friendly.
 - [ ] **M7 — Release gating.** See §6.
 

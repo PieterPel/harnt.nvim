@@ -136,6 +136,20 @@ auth, `CLAUDE_CODE_SSE_PORT`/`ENABLE_IDE_INTEGRATION` env, the openDiff/getDiagn
 getCurrentSelection/… tool set, and `review`/`on_selection`/`on_mention` mapping
 Claude's `selection_changed`/`at_mentioned` shapes onto the shared services.
 
+Not every agent fits the reverse-MCP base — some channels aren't "the CLI dials
+into a server we host." Those implement `start` directly but compose the *same*
+shared services, so the provider still boils down to a small protocol map:
+- `codex.lua` — proxies `codex app-server` (stdio) and taps the stream.
+- `opencode.lua` — is a *client* of the agent's own HTTP server (`opencode
+  serve`): it taps the `/event` SSE stream (`transport/httpclient`). An
+  edit/write/patch `permission.v2.asked` → interactive `diff` review (change
+  correlated via `source.callID` + the cached tool input); a command permission →
+  `approvals`; `session.diff` → `changes`; and `on_mention` pushes an `@`-mention
+  via `POST /tui/append-prompt`. The native TUI (`opencode attach`) drives and
+  renders. All OpenCode protocol knowledge (event names, the
+  `once`/`always`/`reject` reply enum, tool-input shapes, endpoint paths) lives in
+  that one file. See `OPENCODE.md`.
+
 ---
 
 ## 6. Checklist for a new provider

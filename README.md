@@ -8,8 +8,8 @@
 ![harnt.nvim: two agents, one diff flow](./assets/demo.gif) -->
 _Demo GIF coming soon — `just demo` stages it; see [`DEMO.md`](./DEMO.md)._
 
-**Status: beta.** Working end-to-end for **Claude Code**, **Codex**, and
-**Antigravity (`agy`)** — diffs, approvals, editor-context, a change-log, and one
+**Status: beta.** Working end-to-end for **Claude Code**, **Codex**,
+**Antigravity (`agy`)**, and **OpenCode** — diffs, approvals, editor-context, a change-log, and one
 keymap set across all three, each verified against the real CLI. Pure Lua, no
 daemon. Not yet on luarocks (install from git — see below). See [`PLAN.md`](./PLAN.md)
 for the roadmap and [`BET.md`](./BET.md) for why this exists.
@@ -22,7 +22,8 @@ Every modern coding agent ships its own terminal UI and a way to reach *into*
 your editor for editor-shaped work — open this diff, give me the selection, what
 are the diagnostics, apply these edits, ask the user to approve. Claude Code
 calls it its IDE integration, Codex has `/ide` and its app-server, Antigravity
-has lifecycle hooks. Different wires, one **shape**: the editor is a tool-server
+has lifecycle hooks, OpenCode hosts an HTTP server its own TUI is a client of.
+Different wires, one **shape**: the editor is a tool-server
 the agent reaches back into. harnt hosts that channel for many agents and unifies
 the genuinely shared part — **context, diff, approvals, apply, and one set of
 keymaps** — while each agent's own TUI stays untouched in a terminal split. That
@@ -49,6 +50,7 @@ the deep features in the process.
 | **Claude Code** | WebSocket IDE integration (lockfile) | `openDiff` | IDE tools (live) | ✅ verified |
 | **Codex** | `app-server` proxy (stdio) behind `codex --remote`; `/ide` unix socket for context | app-server tap | `/ide` socket (pull) | ✅ verified |
 | **Antigravity (`agy`)** | lifecycle hooks (`.agents/hooks.json`) | `PreToolUse` gate | `PreInvocation` inject | ✅ verified |
+| **OpenCode** | client of the agent's own HTTP server (`opencode serve`) behind `opencode attach`; `/event` SSE tap | edit → diff review, cmd → approval (HTTP reply) | `@`-mention push (`/tui/append-prompt`) | ✅ wire verified |
 | Fake | in-process | — | — | test seam |
 | Qwen | companion spec | — | — | planned |
 
@@ -61,7 +63,7 @@ See [`PROVIDERS.md`](./PROVIDERS.md).
 
 - Neovim **0.10+**.
 - The CLI for each agent you want to use, installed and authenticated:
-  - Claude Code (`claude`), Codex (`codex`), Antigravity (`agy`).
+  - Claude Code (`claude`), Codex (`codex`), Antigravity (`agy`), OpenCode (`opencode`).
 - `nc` (netcat) — only for Antigravity's hook bridge.
 - Run `:checkhealth harnt` — it reports, per provider, what's present and what's missing.
 
@@ -83,6 +85,7 @@ from git.
     { "<leader>ac", "<cmd>Harnt open claude<cr>", desc = "harnt: Claude" },
     { "<leader>ax", "<cmd>Harnt open codex<cr>",  desc = "harnt: Codex" },
     { "<leader>ag", "<cmd>Harnt open antigravity<cr>", desc = "harnt: Antigravity" },
+    { "<leader>ao", "<cmd>Harnt open opencode<cr>", desc = "harnt: OpenCode" },
   },
 }
 ```
@@ -99,7 +102,7 @@ from git.
 ## Quickstart
 
 ```lua
-require("harnt").setup({})   -- registers claude, codex, antigravity
+require("harnt").setup({})   -- registers claude, codex, antigravity, opencode
 ```
 
 Then:
@@ -156,6 +159,15 @@ require("harnt").setup({
   (non-destructively, restored on stop): `PreToolUse` gates edits/commands
   (blocking = interactive diffs), `PreInvocation` injects editor context. Needs
   `nc`. Runs `agy` interactively in the split.
+- **OpenCode** — harnt spawns `opencode serve` (its own HTTP+SSE server) and
+  launches the native TUI via `opencode attach`; it taps the `/event` stream. Edit
+  permissions show as an interactive diff (accept/reject/comment, reconstructed
+  from the tool call and answered over HTTP with free-text feedback on reject);
+  command permissions use the approval popup; auto-applied edits land in `:Harnt
+  changes`; and `:Harnt send` pushes the current file/selection as a native
+  `@`-mention. The TUI drives and renders; harnt observes. OpenCode also ships a
+  headless `opencode acp` surface — the exact thing harnt refuses to render; we use
+  the native TUI + server instead. See [`OPENCODE.md`](./OPENCODE.md).
 
 ## No feature loss (the guarantee)
 
@@ -167,6 +179,7 @@ untouched. Verified end-to-end per provider (`just e2e-*`):
 | Claude | plan mode, slash commands, `/compact`; `openDiff` + diagnostics + selection |
 | Codex | `/ide` context ("IDE context is on"), app-server diffs + approvals, native TUI |
 | Antigravity | `PreToolUse` diff gate (reject blocks / accept writes), `PreInvocation` context |
+| OpenCode | native TUI (plan/build agents, slash commands, sessions) untouched; edit permission → diff review, command → approval, `session.diff` → change-log, `:Harnt send` → `@`-mention |
 
 ## Extending
 

@@ -74,6 +74,13 @@ e2e-codex-ide:
 e2e-agy-hooks:
     env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-agy-hooks.lua
 
+# Real-CLI e2e smoke vs OpenCode: spawns the real `opencode serve`, reaches it
+# over harnt's HTTP client, and taps its `/event` SSE stream. Verifies the wire +
+# transport against the real binary (turn-driving needs the attached TUI — see
+# OPENCODE.md). Needs `opencode` on PATH. NOT part of `ci`.
+e2e-opencode:
+    env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-opencode.lua
+
 # Publish the rock to luarocks.org. Needs LUAROCKS_API_KEY. Runs on tag in CI,
 # but works locally too: `LUAROCKS_API_KEY=... just publish`.
 publish:
