@@ -1,11 +1,69 @@
 # ANTIGRAVITY.md — Antigravity (`agy`) integration: reverse-engineering & plan
 
-**Status: reverse-engineered, viable, NOT yet built.** This is the hardest
-provider by far — a proprietary multi-process Connect/gRPC system with a hard
-dependency on the Antigravity IDE being installed. But it *is* feasible, and the
-path is mapped below. Left as a documented milestone of its own rather than
-rushed. `agy` = Antigravity CLI (Google's Gemini-CLI successor, Windsurf/Codeium
-"exa" lineage).
+**Status: BUILT — via lifecycle hooks, NOT the language server.** The provider
+(`lua/harnt/providers/antigravity.lua`) reaches the whole point of the project —
+interactive diffs + approvals in nvim, plus editor-context injection — through
+`agy`'s documented `.agents/hooks.json` system. The elaborate `exa`
+language-server / ExtensionServer path below was **real reverse-engineering of the
+wrong process**: it drives the desktop IDE's Cascade sidebar, not the terminal
+`agy` CLI (a fresh `agy -i` spawns no language_server — verified by process tree).
+The RE is kept in full because it's accurate about the IDE and documents *why* it
+is off harnt's path. See "What actually ships" immediately below, then the
+LS record. `agy` = Antigravity CLI (Google's Gemini-CLI successor, Windsurf/
+Codeium "exa" lineage).
+
+## What actually ships — the hook gate
+
+Terminal `agy` supports lifecycle hooks (its own shipped docs:
+`~/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/hooks.md`). harnt
+injects one named hook (`harnt`) into `.agents/hooks.json`, non-destructively
+merged and restored on stop, bridging agy's events to nvim over a per-session unix
+socket (`transport/reqsock`, driven from the hook command via `nc -U`):
+
+| agy event | harnt does | contract |
+|---|---|---|
+| `PreToolUse` (edit tools) | reconstruct the change from `toolCall.args`, render via the `diff` service, return the verdict | out: `{decision:"allow"｜"deny", reason?}` — **blocking**, so this IS the interactive diff |
+| `PreToolUse` (`run_command`) | prompt via the `approvals` service | out: `{decision}` |
+| `PreInvocation` | inject live editor context (active file, selection, open files, error count) | out: `{injectSteps:[{ephemeralMessage}]}` — the context-push channel |
+
+Decision strings are agy's (`allow`/`deny`/`ask`/`force_ask`); harnt uses
+allow/deny. This mirrors Claude (`openDiff`) and Codex (`item/fileChange/
+requestApproval`) through the *same* shared `diff`/`approvals`/`changes` services —
+a third channel shape (a blocking child-process hook) absorbed without forking them.
+
+**Verified end-to-end against real `agy 1.1.4`** (`just e2e-agy-hooks`, in the nix
+devshell) — driving the **interactive** `agy` TUI over a PTY, i.e. the exact mode
+harnt spawns (agy in a terminal split), through the real provider path. Both
+directions, decisively:
+- **reject the diff** → agy attempts the edit, we reject, and the file is **never
+  written** (it retried `write_to_file`/`run_command`; every attempt was blocked).
+- **accept the diff** → the provider replies `allow` + `permissionOverrides`
+  (`write_file(<path>)`), satisfying agy's own permission so it does **not**
+  double-prompt, and the file **is written**.
+
+`PreInvocation` fires before each model call (the context-injection channel). The
+real edit tool is **`write_to_file`** with args `{TargetFile, CodeContent,
+Description, Overwrite}` — `TargetFile`/`CodeContent` are in `_normalize_edit`'s
+field lists, so it recovers the real path and renders a real diff (confirmed live,
+not the raw-args fallback).
+
+Notes: `nc -U` is a soft dependency of the bridge. `agy -p` (headless/print) is a
+*different* permission model — it hard-auto-denies any write needing a prompt
+regardless of hooks — so it is NOT representative and the e2e uses interactive
+`agy -i`. Open: the hooks.json read-path across versions (bug #49: some builds
+read `~/.gemini/config/hooks.json`, others `.agents/hooks.json` — 1.1.4 reads
+`.agents/hooks.json` as used here).
+
+---
+
+## LEGACY REVERSE-ENGINEERING (the exa language server — the wrong process)
+
+Everything below reverse-engineers the **desktop IDE's** integration. It is
+accurate but off harnt's path (terminal `agy` doesn't use it). Kept as the record.
+
+Original framing — **reverse-engineered, viable, but the wrong integration
+point** — a proprietary multi-process Connect/gRPC system with a hard dependency
+on the Antigravity IDE being installed.
 
 ## The dead assumption (owning the miss)
 

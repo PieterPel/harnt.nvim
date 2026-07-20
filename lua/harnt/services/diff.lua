@@ -31,6 +31,7 @@ local review_handler = nil
 ---@class harnt.diff.Result
 ---@field accepted boolean
 ---@field content? string[] final content (possibly user-edited) when accepted
+---@field comments { line: integer, text: string }[] inline comments attached before resolving
 
 --- The buffers a presenter is asked to display. The service creates and owns
 --- them; the presenter only decides layout.
@@ -339,16 +340,17 @@ function M.accept(id)
   if not e then
     return false, "no such diff: " .. tostring(id)
   end
+  local comments = e.comments
   -- Review-only: the agent applies its own edit; we only report the verdict.
   if e.review then
     teardown(id)
-    e.callback({ accepted = true })
+    e.callback({ accepted = true, comments = comments })
     return true
   end
   local content = vim.api.nvim_buf_get_lines(e.proposed_buf, 0, -1, false)
   teardown(id)
   local ok, err = apply.apply_file(e.spec.path, content)
-  e.callback({ accepted = true, content = content })
+  e.callback({ accepted = true, content = content, comments = comments })
   return ok, err
 end
 
@@ -359,8 +361,9 @@ function M.reject(id)
   if not e then
     return
   end
+  local comments = e.comments
   teardown(id)
-  e.callback({ accepted = false })
+  e.callback({ accepted = false, comments = comments })
 end
 
 --- The diff id whose original/proposal buffer is `bufnr`, if any.

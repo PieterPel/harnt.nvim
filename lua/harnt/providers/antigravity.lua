@@ -1,340 +1,355 @@
---- Antigravity provider — work in progress (see ANTIGRAVITY.md).
+--- Antigravity provider — lifecycle-hook gate.
 ---
---- Antigravity's editor integration is the Windsurf/Codeium "exa" language
---- server. harnt plays the editor: it spawns the real `language_server` binary
---- (feeding it a protobuf `Metadata` frame on stdin), hosts the server's
---- ExtensionServer channel (connect+proto) for editor actions, and launches `agy`
---- pointed at the spawned LS. This is a big provider with a hard dependency on the
---- Antigravity IDE being installed (for the LS binary) — hence built
---- incrementally. Currently implemented: LS discovery + protobuf boot handshake.
+--- The terminal `agy` CLI is standalone: it does NOT dial the exa language_server
+--- (that server is the desktop IDE's Cascade sidebar; see ANTIGRAVITY.md for the
+--- full reverse-engineering record and why the earlier LS/ExtensionServer path was
+--- the wrong integration point). What terminal agy *does* expose is a documented
+--- lifecycle-hook system (`.agents/hooks.json`, shipped with the CLI at
+--- `builtin/skills/agy-customizations/docs/hooks.md`). harnt uses it to reach the
+--- project's whole point — interactive diffs and approvals in nvim:
+---
+---   * `PreToolUse` (blocking) for edit/command tools → we reconstruct the proposed
+---     change from the tool args, render it through the shared `diff` service (an
+---     edit) or `approvals` service (a command), and answer `{decision}`. This is
+---     agy's analogue of Claude's `openDiff` / Codex's `item/fileChange/requestApproval`.
+---   * `PreInvocation` → we inject the live editor context (active file, selection,
+---     open files) as an `ephemeralMessage`, closing the context gap the same way
+---     codex's `/ide` socket does — the pull-based equivalent of Claude's IDE tools.
+---
+--- The hook command bridges the agy child process to harnt over a per-session unix
+--- socket (`reqsock`): the hook pipes its stdin JSON to us via `nc -U`, we decide,
+--- and write the JSON decision back. All agy protocol knowledge (hook file shape,
+--- tool names, decision strings) lives in THIS file; the services stay agnostic.
 
-local connect = require("harnt.transport.connect")
+local approvals = require("harnt.services.approvals")
+local change_log = require("harnt.services.changes")
+local context = require("harnt.services.context")
+local diff = require("harnt.services.diff")
 local events = require("harnt.events")
-local http = require("harnt.transport.http")
-local pb = require("harnt.transport.protobuf")
+local reqsock = require("harnt.transport.reqsock")
 
 local M = {}
 
 M.name = "antigravity"
 
---- `Metadata` field numbers, decoded from the LS binary's descriptors
---- (see ANTIGRAVITY.md "BREAKTHROUGH").
-local META = {
-  ide_name = 1,
-  api_key = 3,
-  locale = 4,
-  disable_telemetry = 6,
-  ide_version = 7,
-  extension_name = 12,
-  extension_path = 17,
-  device_fingerprint = 24,
-  user_tier_id = 29,
+--- Edit tools whose args we turn into a reviewable diff (`kind` decided by whether
+--- the target already exists). Command tools go through the approval prompt.
+local EDIT_TOOLS = {
+  edit_file = true,
+  write_file = true,
+  write_to_file = true,
+  replace_file_content = true,
+  multi_replace_file_content = true,
 }
 
---- Candidate `language_server` binary locations. The IDE ships it in its app
---- bundle; extend per platform as needed.
-local LS_CANDIDATES = {
-  -- macOS (Apple Silicon / Intel)
-  "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm",
-  "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_x64",
-  -- Linux
-  vim.fs.joinpath(
-    vim.uv.os_homedir() or "",
-    ".antigravity/extensions/antigravity/bin/language_server_linux_x64"
-  ),
+--- The `PreToolUse` matcher regex (Go `regexp`, `|` = alternation): the edit
+--- tools plus `run_command`. Tool names are the lowercased step type minus the
+--- `CORTEX_STEP_TYPE_` prefix (per hooks.md).
+local TOOL_MATCHER =
+  "edit_file|write_file|write_to_file|replace_file_content|multi_replace_file_content|run_command"
+
+--- Likely arg field names carrying the target path / new content across agy's
+--- edit tools. Tried in order; the exact set is confirmed empirically per version
+--- (log a real `PreToolUse` payload). Unknown shapes fall back to showing the raw
+--- args, so the gate still works even before the mapping is pinned.
+local PATH_FIELDS =
+  { "path", "file_path", "filePath", "absolute_path", "AbsolutePath", "TargetFile", "target_file" }
+local CONTENT_FIELDS = {
+  "content",
+  "Content",
+  "new_content",
+  "NewContent",
+  "CodeContent",
+  "file_content",
+  "text",
+  "contents",
 }
 
---- Locate the language-server binary, or nil if the IDE isn't installed.
+--- First string-valued field of `args` named in `fields`, or nil.
+---@param args table
+---@param fields string[]
 ---@return string?
-function M.find_ls()
-  for _, path in ipairs(LS_CANDIDATES) do
-    if path ~= "" and vim.fn.executable(path) == 1 then
-      return path
+local function pick(args, fields)
+  for _, field in ipairs(fields) do
+    if type(args[field]) == "string" then
+      return args[field]
     end
   end
   return nil
 end
 
---- The device fingerprint the IDE uses (its installation id), if present.
----@return string
-local function installation_id()
-  local path = vim.fs.joinpath(vim.uv.os_homedir() or "", ".gemini/antigravity-ide/installation_id")
-  if vim.fn.filereadable(path) == 1 then
-    -- extra parens: keep only gsub's first return value (drops the count)
-    return ((vim.fn.readfile(path)[1] or ""):gsub("%s+$", ""))
+--- A normalized proposed change ready for the diff service.
+---@class harnt.antigravity.Edit
+---@field path string
+---@field kind string "add" | "update"
+---@field patch string[] unified-diff (or fallback) lines
+
+--- Turn an edit tool's args into a reviewable change. When we can recover the
+--- target path and full new content we render a real unified diff against the
+--- file on disk; otherwise we fall back to displaying the raw args so the user can
+--- still see what's proposed and allow/deny.
+---@param name string tool name
+---@param args table tool args
+---@return harnt.antigravity.Edit
+function M._normalize_edit(name, args)
+  local path = pick(args, PATH_FIELDS)
+  local content = pick(args, CONTENT_FIELDS)
+  if path and content then
+    local exists = vim.fn.filereadable(path) == 1
+    local old = exists and (table.concat(vim.fn.readfile(path), "\n") .. "\n") or ""
+    local new = content:sub(-1) == "\n" and content or (content .. "\n")
+    ---@diagnostic disable-next-line: deprecated
+    local unified = vim.diff(old, new, {}) --[[@as string]]
+    local patch = (unified ~= nil and unified ~= "") and vim.split(unified, "\n", { plain = true })
+      or { "(no textual change)" }
+    return { path = path, kind = exists and "update" or "add", patch = patch }
   end
-  return "harnt"
+  return {
+    path = path or ("(%s)"):format(name),
+    kind = "update",
+    patch = vim.split(vim.inspect(args), "\n", { plain = true }),
+  }
 end
 
---- Build the stdin bootstrap `Metadata` protobuf frame the LS reads before
---- starting (raw protobuf, EOF-delimited). `api_key` is the cloud OAuth token
---- (a dummy still boots the LS; auth is lazy).
----@param opts? { api_key?: string, device_fingerprint?: string, ide_version?: string, extension_path?: string }
+--- Build the `PreInvocation` context injection: the live editor state as a single
+--- transient `ephemeralMessage`. Empty when there's nothing worth sending.
+---@return table[] injectSteps
+function M._context_steps()
+  local snap = context.snapshot()
+  local root = snap.roots[1]
+  local function rel(p)
+    if root and root ~= "" and p:sub(1, #root) == p and p ~= "" then
+      return p:sub(#root + 2)
+    end
+    return p
+  end
+
+  local lines = {} ---@type string[]
+  if snap.selection and snap.selection.path ~= "" then
+    lines[#lines + 1] = ("Editor selection — %s (lines %d–%d):"):format(
+      rel(snap.selection.path),
+      snap.selection.start.row,
+      snap.selection.finish.row
+    )
+    lines[#lines + 1] = snap.selection.text
+  else
+    local active = vim.api.nvim_buf_get_name(0)
+    if active ~= "" then
+      lines[#lines + 1] = "Active file in editor: " .. rel(active)
+    end
+  end
+
+  local open = {} ---@type string[]
+  for _, b in ipairs(snap.buffers) do
+    if b.path ~= "" then
+      open[#open + 1] = rel(b.path)
+    end
+  end
+  if #open > 0 then
+    lines[#lines + 1] = "Open files: " .. table.concat(open, ", ")
+  end
+
+  local errors = 0
+  for _, d in ipairs(snap.diagnostics) do
+    if d.severity == "error" then
+      errors = errors + 1
+    end
+  end
+  if errors > 0 then
+    lines[#lines + 1] = ("Editor reports %d error diagnostic(s)."):format(errors)
+  end
+
+  if #lines == 0 then
+    return {}
+  end
+  return {
+    { ephemeralMessage = "Context from the user's Neovim editor:\n" .. table.concat(lines, "\n") },
+  }
+end
+
+--- Build the deny `reason` for a rejected edit, folding in any inline review
+--- comments the user attached to the diff. Plain rejection with no comments still
+--- gives agy a clear reason.
+---@param comments? { line: integer, text: string }[]
 ---@return string
-function M.metadata_frame(opts)
-  opts = opts or {}
-  return pb.encode({
-    { no = META.ide_name, str = "Neovim" },
-    { no = META.ide_version, str = opts.ide_version or "0.1" },
-    { no = META.extension_name, str = "harnt" },
-    { no = META.extension_path, str = opts.extension_path or "" },
-    { no = META.locale, str = "en" },
-    { no = META.device_fingerprint, str = opts.device_fingerprint or installation_id() },
-    { no = META.api_key, str = opts.api_key or "" },
-    { no = META.disable_telemetry, bool = true },
-    { no = META.user_tier_id, str = "" },
-  })
+function M._deny_reason(comments)
+  if not comments or #comments == 0 then
+    return "Change rejected in the editor."
+  end
+  local lines = { "Change rejected in the editor. Feedback:" }
+  for _, c in ipairs(comments) do
+    lines[#lines + 1] = ("- L%d: %s"):format(c.line, c.text)
+  end
+  return table.concat(lines, "\n")
 end
 
---- A spawned language server.
----@class harnt.antigravity.LS
----@field pid integer
----@field stop fun()
+--- Handle a `PreToolUse` payload: gate an edit through the diff service or a
+--- command through the approval service, then answer with the agy decision.
+---@param call { name?: string, args?: table }
+---@param respond fun(response: table)
+function M._handle_tool_use(call, respond)
+  local name = call.name or ""
+  local args = call.args or {}
 
---- Spawn the language server: run the binary with the IDE's arg shape and feed it
---- the `Metadata` frame on stdin, then close stdin (EOF) so it boots. Ports are
---- fixed so `agy` can be pointed at the LS. stdout/stderr are ignored (LS logs).
----@param opts { ls_path: string, ext_port: integer, https_port: integer, lsp_port: integer, csrf: string, ext_csrf: string, metadata: string, cwd?: string }
----@return harnt.antigravity.LS
-function M.spawn_ls(opts)
-  local uv = vim.uv
-  local stdin = assert(uv.new_pipe(false))
+  if name == "run_command" then
+    local cmdline = args.CommandLine or args.command or args.cmd
+    approvals.request({
+      key = "antigravity:command",
+      prompt = "Antigravity wants to run a command",
+      detail = cmdline,
+    }, function(allowed)
+      if allowed then
+        -- Granting the permission ourselves means agy doesn't ALSO prompt — our
+        -- approval popup is the one and only gate. `command(<cmdline>)` is agy's
+        -- permission grammar (hooks.md PreToolUse example).
+        respond({
+          decision = "allow",
+          permissionOverrides = cmdline and { ("command(%s)"):format(cmdline) } or nil,
+        })
+      else
+        respond({ decision = "deny" })
+      end
+    end)
+    return
+  end
 
-  ---@type uv.uv_process_t?
-  local handle
-  handle = uv.spawn(opts.ls_path, {
-    args = {
-      "--enable_lsp",
-      "--csrf_token",
-      opts.csrf,
-      "--extension_server_port",
-      tostring(opts.ext_port),
-      "--extension_server_csrf_token",
-      opts.ext_csrf,
-      "--https_server_port",
-      tostring(opts.https_port),
-      "--lsp_port",
-      tostring(opts.lsp_port),
-      "--app_data_dir",
-      "antigravity-ide",
-      "--subclient_type",
-      "ide",
-      "--cloud_code_endpoint",
-      "https://cloudcode-pa.googleapis.com",
+  if EDIT_TOOLS[name] then
+    local edit = M._normalize_edit(name, args)
+    diff.open_review({ path = edit.path, patch = edit.patch }, function(result)
+      if result.accepted then
+        change_log.record({
+          path = edit.path,
+          kind = edit.kind,
+          diff = table.concat(edit.patch, "\n"),
+          provider = M.name,
+        })
+        -- Our accepted diff IS the approval; grant agy's write permission so it
+        -- doesn't double-prompt (verified end-to-end — see e2e-agy-hooks).
+        respond({
+          decision = "allow",
+          permissionOverrides = { ("write_file(%s)"):format(edit.path) },
+        })
+      else
+        -- Deny, folding any inline review comments into the `reason` — agy's
+        -- native feedback channel (the reason is shown to the model), so a
+        -- rejected diff carries the user's notes back and the agent can revise.
+        respond({ decision = "deny", reason = M._deny_reason(result.comments) })
+      end
+    end)
+    return
+  end
+
+  -- A matched-but-unhandled tool: don't block it.
+  respond({ decision = "allow" })
+end
+
+--- Route one hook request to the right handler by payload shape (agy sends no
+--- explicit event discriminator; the fields distinguish the events). `PreToolUse`
+--- carries `toolCall`; `PreInvocation` carries `invocationNum`; anything else
+--- (e.g. `PostToolUse`) just gets an empty ack.
+---@param request table the hook stdin payload
+---@param respond fun(response: table)
+function M._on_hook(request, respond)
+  if type(request.toolCall) == "table" then
+    M._handle_tool_use(request.toolCall, respond)
+  elseif request.invocationNum ~= nil then
+    respond({ injectSteps = M._context_steps() })
+  else
+    respond(vim.empty_dict())
+  end
+end
+
+--- Path to the workspace hook config.
+---@param cwd string
+---@return string
+local function hooks_path(cwd)
+  return vim.fs.joinpath(cwd, ".agents", "hooks.json")
+end
+
+--- The `harnt` named-hook entry bridging agy's lifecycle events to our socket.
+--- The command pipes the hook's stdin JSON to us and echoes our JSON reply
+--- (`nc -U`). `PreToolUse` blocks on user review, so its timeout is generous;
+--- `PreInvocation` is a fast round-trip. Structure per hooks.md: `PreToolUse` is
+--- grouped (matcher + hooks), `PreInvocation` is a flat handler list.
+---@param sock string
+---@return table
+local function hook_entry(sock)
+  local command = "nc -U " .. vim.fn.shellescape(sock)
+  return {
+    PreToolUse = {
+      {
+        matcher = TOOL_MATCHER,
+        hooks = { { type = "command", command = command, timeout = 3600 } },
+      },
     },
-    cwd = opts.cwd,
-    stdio = { stdin, nil, nil },
-  }, function()
-    if not stdin:is_closing() then
-      stdin:close()
-    end
-    if handle and not handle:is_closing() then
-      handle:close()
-    end
-  end)
-  assert(handle, "antigravity: could not spawn language_server at " .. opts.ls_path)
-
-  -- Write the bootstrap metadata, then close the write side so the LS sees EOF
-  -- and finishes reading its initial metadata.
-  stdin:write(opts.metadata)
-  stdin:shutdown()
-
-  return {
-    pid = handle:get_pid(),
-    stop = function()
-      if handle and not handle:is_closing() then
-        pcall(function()
-          handle:kill("sigterm")
-        end)
-      end
-    end,
+    PreInvocation = {
+      { type = "command", command = command, timeout = 30 },
+    },
   }
 end
 
--- === ExtensionServer: UnifiedStateSync / OAuth ===================================
--- The LS authenticates by subscribing to the `uss-oauth` state topic and reading
--- two keys; harnt serves them (token from the keychain). Verified via serve-verify
--- against the real LS — see ANTIGRAVITY.md "AUTH CRACKED".
+--- Install our hook into `.agents/hooks.json`, merging non-destructively under the
+--- `harnt` key (agy merges multiple named hooks) and preserving any existing file.
+--- Returns a restore function that puts the file back exactly as it was (or removes
+--- it if we created it).
+---@param cwd string
+---@param sock string
+---@return fun() restore
+local function install_hooks(cwd, sock)
+  local path = hooks_path(cwd)
+  local existed = vim.fn.filereadable(path) == 1
+  local original_lines = existed and vim.fn.readfile(path) or nil
 
---- uss-oauth state keys the LS reads (verified).
-local OAUTH_KEY = {
-  auth_state = "authStateWithContextSentinelKey", -- value: plain JSON {state, context}
-  token_info = "oauthTokenInfoSentinelKey", -- value: base64(protobuf OAuthTokenInfo)
-}
-
---- `OAuthTokenInfo` protobuf field numbers (decoded from the LS descriptors).
-local OAUTH_TOKEN_INFO = { access_token = 1, token_type = 2, refresh_token = 3 }
-
---- Read agy's OAuth token from the OS keychain (same source agy uses — its logs
---- say "authenticated via keyring"). Returns nil if unavailable.
----@return { access_token: string, token_type: string, refresh_token: string }?
-function M.oauth_token()
-  -- macOS keychain via go-keyring (service=gemini account=antigravity); the value
-  -- is `go-keyring-base64:<base64 JSON>`.
-  local out = vim.fn.system({
-    "security",
-    "find-generic-password",
-    "-s",
-    "gemini",
-    "-a",
-    "antigravity",
-    "-w",
-  })
-  if vim.v.shell_error ~= 0 then
-    return nil
+  local config = {}
+  if original_lines then
+    local ok, parsed = pcall(vim.json.decode, table.concat(original_lines, "\n"))
+    if ok and type(parsed) == "table" then
+      config = parsed
+    end
   end
-  local b64 = (out:gsub("%s+$", "")):gsub("^go%-keyring%-base64:", "")
-  local ok, obj = pcall(function()
-    return vim.json.decode(vim.base64.decode(b64))
-  end)
-  if not ok or type(obj) ~= "table" or type(obj.token) ~= "table" then
-    return nil
+  config.harnt = hook_entry(sock)
+
+  vim.fn.mkdir(vim.fs.dirname(path), "p")
+  vim.fn.writefile({ vim.json.encode(config) }, path)
+
+  return function()
+    if existed and original_lines then
+      pcall(vim.fn.writefile, original_lines, path)
+    else
+      pcall(os.remove, path)
+    end
   end
-  return {
-    access_token = obj.token.access_token or "",
-    token_type = obj.token.token_type or "Bearer",
-    refresh_token = obj.token.refresh_token or "",
-  }
 end
 
---- Build one UnifiedStateSync KV row: `{ #1 key, #2 value{ #1 payload } }`.
----@param key string
----@param payload string the value string (plain JSON or base64(proto), per key)
----@return string encoded row message
-local function kv_row(key, payload)
-  local value_msg = pb.encode({ { no = 1, str = payload } })
-  return pb.encode({ { no = 1, str = key }, { no = 2, msg = value_msg } })
-end
-
---- Build the `uss-oauth` subscribe response (one `initial_state` frame body) that
---- authenticates the LS: signed-in auth-state + the base64(protobuf) token info.
----@param token { access_token: string, token_type: string, refresh_token: string }
----@return string subscribe_response encoded SubscribeResponse{ initial_state }
-function M.oauth_state_response(token)
-  local auth_json = vim.json.encode({
-    state = "signedIn",
-    context = { project = "", showProjectError = false, errorMessage = "" },
-  })
-  local token_proto = pb.encode({
-    { no = OAUTH_TOKEN_INFO.access_token, str = token.access_token },
-    { no = OAUTH_TOKEN_INFO.token_type, str = token.token_type },
-    { no = OAUTH_TOKEN_INFO.refresh_token, str = token.refresh_token },
-  })
-  local initial_state = pb.encode({
-    { no = 1, msg = kv_row(OAUTH_KEY.auth_state, auth_json) },
-    { no = 1, msg = kv_row(OAUTH_KEY.token_info, vim.base64.encode(token_proto)) },
-  })
-  return pb.encode({ { no = 1, msg = initial_state } }) -- SubscribeResponse{ initial_state=1 }
-end
-
---- Host the ExtensionServer the LS dials (`connect+proto`). Streams the
---- `uss-oauth` auth state (from `token`) on subscribe; empty state for other
---- topics; unary-acks everything else. Editor-action methods (OpenDiffZones /
---- WriteCascadeEdit → nvim diff) plug in here next.
----@param token { access_token: string, token_type: string, refresh_token: string }?
----@return harnt.http.Server? server, string? err
-function M.serve(token)
-  return http.server({
-    on_request = function(req)
-      if req.path:find("SubscribeToUnifiedStateSyncTopic", 1, true) then
-        local topic_frame = connect.decode(req.body)
-        local topic = topic_frame and pb.field(pb.decode(topic_frame.payload), 1)
-        local topic_name = topic and topic.bytes or ""
-        return {
-          status = 200,
-          headers = { ["content-type"] = "application/connect+proto" },
-          stream = function(w)
-            local body
-            if topic_name == "uss-oauth" and token then
-              body = M.oauth_state_response(token)
-            else
-              body = pb.encode({ { no = 1, msg = "" } }) -- empty initial_state
-            end
-            w.write(connect.encode(body))
-            -- long-lived subscription: keep the stream open (no finish()).
-          end,
-        }
-      end
-      -- Unary methods (Heartbeat, editor actions, …): connect-unary ack — an empty
-      -- message body (no envelope). Editor-action wiring is the next layer.
-      return {
-        status = 200,
-        headers = { ["content-type"] = "application/connect+proto" },
-        body = "",
-      }
-    end,
-  })
-end
-
---- Pick a free loopback TCP port (bind :0, read, release).
----@return integer
-local function free_port()
-  local tcp = assert(vim.uv.new_tcp())
-  tcp:bind("127.0.0.1", 0)
-  local name = tcp:getsockname()
-  tcp:close()
-  return name and name.port or 0
-end
-
---- A short random hex token.
----@return string
-local function rand_token()
-  local ok, bytes = pcall(vim.uv.random, 16)
-  if ok and type(bytes) == "string" then
-    return (bytes:gsub(".", function(c)
-      return ("%02x"):format(c:byte())
-    end))
-  end
-  return ("%x"):format(vim.uv.hrtime())
-end
-
---- An Antigravity session. `info` lets the manager launch `agy` pointed at the
---- spawned LS.
----@class harnt.antigravity.Session : harnt.Session
----@field info { https_port: integer, csrf: string, remote_url: string }
-
---- Command to launch the native `agy` TUI (companion mode via env; see `env`).
+--- The launch command: the native `agy` TUI. Hooks are discovered from
+--- `.agents/hooks.json` in the workspace, so no special env/flags are needed.
 M.cmd = { "agy" }
 
---- Env so the spawned `agy` connects to harnt's LS as the editor companion.
---- (`any` — the session info shape is provider-specific; the manager passes it
---- through opaquely.)
----@param info any the antigravity session info ({ https_port, csrf })
----@return table<string, string>
-function M.env(info)
-  return {
-    ANTIGRAVITY_CLI_ALIAS = "agy-ide",
-    ANTIGRAVITY_LS_ADDRESS = ("http://127.0.0.1:%d"):format(info.https_port),
-    ANTIGRAVITY_CSRF_TOKEN = info.csrf,
-  }
-end
+--- An Antigravity session.
+---@class harnt.antigravity.Session : harnt.Session
+---@field info { hook_socket: string, cwd: string }
 
---- Start an Antigravity session: host the ExtensionServer, spawn the real LS
---- (authenticated from the keychain token), and hand back the endpoint `agy`
---- dials. The manager launches `agy` (see `cmd`/`env`).
+--- Start an Antigravity session: host the hook decision socket and install the
+--- `.agents/hooks.json` bridge. The manager launches `agy` (see `cmd`); its edits
+--- and commands then route through our shared diff/approval services, and each
+--- model invocation pulls the live editor context.
 ---@param ctx? harnt.SessionContext
 ---@return harnt.antigravity.Session
 function M.start(ctx)
   ctx = ctx or {}
-  local ls_path =
-    assert(M.find_ls(), "antigravity: language_server not found (is the IDE installed?)")
+  local cwd = ctx.cwd or vim.uv.cwd() or "."
   local bus = events.new()
-  local token = M.oauth_token() -- nil → degraded (cloud calls fail); we still boot
 
-  local ext, err = M.serve(token)
-  assert(ext, "antigravity: could not host ExtensionServer: " .. tostring(err))
-
-  local https_port, lsp_port, csrf = free_port(), free_port(), rand_token()
-  local ls = M.spawn_ls({
-    ls_path = ls_path,
-    ext_port = ext.port,
-    https_port = https_port,
-    lsp_port = lsp_port,
-    csrf = csrf,
-    ext_csrf = rand_token(),
-    metadata = M.metadata_frame({ api_key = token and token.access_token or "" }),
-    cwd = ctx.cwd,
+  local sock = vim.fn.tempname() .. ".agy.sock"
+  local server, err = reqsock.serve({
+    path = sock,
+    on_request = function(request, respond)
+      M._on_hook(request, respond)
+    end,
   })
+  assert(server, "antigravity: could not host hook socket: " .. tostring(err))
+
+  local restore = install_hooks(cwd, sock)
   vim.schedule(function()
     bus:emit(events.TYPES.session_started, { provider = M.name })
   end)
@@ -342,11 +357,7 @@ function M.start(ctx)
   local stopped = false
   ---@type harnt.antigravity.Session
   return {
-    info = {
-      https_port = https_port,
-      csrf = csrf,
-      remote_url = ("http://127.0.0.1:%d"):format(https_port),
-    },
+    info = { hook_socket = sock, cwd = cwd },
     on = function(_self, event, handler)
       return bus:on(event, handler)
     end,
@@ -357,17 +368,17 @@ function M.start(ctx)
         return
       end
       stopped = true
-      ls.stop()
-      ext.close()
+      restore()
+      server.close()
       bus:emit(events.TYPES.session_completed, { provider = M.name })
     end,
   }
 end
 
---- Whether the Antigravity LS (i.e. the IDE) is available.
+--- Whether the `agy` CLI is available.
 ---@return boolean
 function M.detect()
-  return M.find_ls() ~= nil
+  return vim.fn.executable("agy") == 1
 end
 
 return M

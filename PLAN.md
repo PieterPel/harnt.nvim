@@ -137,7 +137,12 @@ Normalize **only the UI-critical surface** the editor services actually react to
   (stdio), serves the native TUI over a **ws** server (`codex --remote`), and taps
   the stream for diffs + approvals. *Proves the base generalizes across a second
   vendor and a genuinely different channel shape.* (Was: "local-HTTP/SSE `/ide`" —
-  wrong; see the Correction note above and `CODEX.md`.)
+  wrong; see the Correction note above and `CODEX.md`.) **Plus** a second,
+  independent reverse channel: harnt hosts codex's `/ide` **context** unix socket
+  (`$TMPDIR/codex-ipc/ipc-{uid}.sock`, u32-LE JSON) and answers `ide-context`
+  requests from `services/context` — the codex analogue of Claude's IDE tools, so
+  the native TUI sees the live selection / open files. Diffs and context ride
+  different codex channels, both hosted at once.
 - **Fake** provider — in-process, for E2E + services dev without real CLIs.
 - Provider registry + capability passthrough + `HarntEvent` autocmd.
 - Unified command + keymap surface across all providers.
@@ -164,7 +169,7 @@ Shipping **two agents on two different transports** in v1 is the whole point: it
 | Fake | — | in-process | v1 (gate) |
 | **Claude** | WebSocket | IDE integration (lockfile) | v1 (gate) |
 | **Codex** | stdio proxy + ws | `app-server` + native TUI (`codex --remote`) | v1 (gate) |
-| Antigravity | Connect-JSON (exa LS) | reuse real `language_server` + host `ExtensionServerService` | own milestone — see `ANTIGRAVITY.md` (was wrongly "MCP/HTTP companion") |
+| Antigravity | lifecycle hooks (`.agents/hooks.json`) | native `agy` TUI + `PreToolUse` diff/approval gate + `PreInvocation` context | built — see `ANTIGRAVITY.md` (the exa-LS path was the wrong process; hooks are the live path) |
 | Qwen | local-HTTP | Gemini/Antigravity companion spec | fast-follow |
 | ~~Gemini CLI~~ | local-HTTP | IDE companion | **dropped** — consumer access ended 2026-06-18; superseded by Antigravity CLI |
 | Cursor | ? | unknown | research spike first |
@@ -190,7 +195,16 @@ Order matters. Fake provider exists early so services work proceeds without real
   native TUI renders the chat untouched.** (Was: `http` transport + `/ide` config
   table — wrong premise; see Correction note + `CODEX.md`.)
 - [ ] **M4 — Registry + passthrough + unified UX.** Provider registry API, `payload.provider` passthrough, `HarntEvent` autocmd, unified `:Harnt*` commands and keymaps, docs.
-- [ ] **M5 — Antigravity (NOT a thin table — the hard one).** Reverse-engineering (done, see `ANTIGRAVITY.md`) showed Antigravity is the Windsurf/Codeium `exa` language-server, not an `/ide`-style callback: harnt spawns the real `language_server` (protobuf `Metadata` stdin boot — *done + verified in Lua*) and must host its `ExtensionServerService` over `connect+proto` (a `transport/http.lua` Connect server + protobuf messages) to route diffs/auth. This is the biggest provider and its own build, not a config table — the honest counter-example to "every adapter is a table." Qwen (companion-spec) remains the fast-follow that tests the table hypothesis.
+- [x] **M5 — Antigravity (the honest counter-example — NOT a thin table).**
+  Reverse-engineering the `exa` language-server (see `ANTIGRAVITY.md`) turned out to
+  target the *desktop IDE*, not terminal `agy` (a fresh `agy -i` spawns no LS). The
+  built provider instead uses agy's documented **lifecycle hooks**: a
+  non-destructively-merged `.agents/hooks.json` bridges `PreToolUse` (edit/command
+  → our `diff`/`approvals` services, blocking = interactive diffs), `PreInvocation`
+  (→ editor-context injection via `ephemeralMessage`) to harnt over a unix socket
+  (`transport/reqsock` ← `nc -U`). Still not a config table — a third *channel
+  shape* (blocking child-process hook) on the same shared services. Qwen
+  (companion-spec) remains the fast-follow that tests the table hypothesis.
 - [ ] **M6 — (Optional) persistence.** State file or lightweight SQLite for session listing/resume, strictly opt-in. No mandatory daemon. Cross-instance attach only if it stays in-process-friendly.
 - [ ] **M7 — Release gating.** See §6.
 

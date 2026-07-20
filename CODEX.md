@@ -73,6 +73,48 @@ user"*. Codex obeys our decision. (Spike: `scratchpad/spike_appserver.py`.)
 
 ---
 
+## The `/ide` context channel (implemented — the second reverse channel)
+
+The app-server proxy carries diffs + approvals. It does **not** carry editor
+*context* (active file, selection, open tabs) — that's a separate codex channel,
+and harnt now hosts it too. The two are orthogonal and run at the same time:
+
+```
+codex TUI ──unix socket──▶ harnt (unixsock SERVER at $TMPDIR/codex-ipc/ipc-{uid}.sock)
+   asks "ide-context"          answers {activeFile, openTabs} from services/context
+```
+
+Verified wire (`codex-rs/tui/src/ide_context/ipc.rs`, codex-0.144.x):
+
+- **Direction:** the editor hosts the unix socket; codex is the client and
+  `connect()`s in. (harnt therefore *binds* `$TMPDIR/codex-ipc/ipc-{uid}.sock`.)
+- **Framing:** 4-byte **little-endian** `u32` length prefix + JSON payload.
+- **Request (codex → editor):** `{type:"request", requestId, sourceClientId:
+  "codex-tui", version:0, method:"ide-context", params:{workspaceRoot}}` — sent
+  immediately on connect, no discovery handshake gating it.
+- **Response (editor → codex):** `{type:"response", requestId, resultType:
+  "success", method:"ide-context", handledByClientId:"harnt", result:{ideContext:
+  {activeFile:{label,path,fsPath,selection,activeSelectionContent,selections},
+  openTabs:[…]}}}`. codex reads `result.ideContext`.
+- **Security:** codex refuses a socket dir not owned by the current user or group/
+  world-writable, so harnt creates `codex-ipc` at mode 0700.
+- **Rendezvous safety:** the socket path is per-user (shared), so harnt probes
+  before binding — a *live* owner (a running IDE) is left untouched and context is
+  skipped; only a stale file from a crashed session is reclaimed.
+
+This is codex's analogue of Claude's `getCurrentSelection` / `getOpenEditors`
+IDE tools. It's pull-based (codex asks each turn; we answer with the live state),
+so there's nothing to push. `providers/codex.lua::M.serve_ide_context`, on
+`transport/unixsock`.
+
+**Verified end-to-end against real `codex 0.144.4`** (`just e2e-codex-ide`, in the
+nix devshell): harnt hosts the socket, the real `codex` TUI runs `/ide`, issues an
+`ide-context` request with `sourceClientId:"codex-tui"` + our workspace root, and
+on our response prints *"IDE context is on. Future messages will include your
+current IDE selection and open tabs."* Cross-checked against codex's own source
+test `fetch_ide_context_uses_unregistered_request_route` (the response shape +
+`requestId` echo + interleaved discovery/no-handler frames all match).
+
 ## The journey (kept deliberately — including the two wrong conclusions)
 
 ### ❌ Wrong conclusion #1 — "Codex `/ide` needs VS Code; not reverse-MCP"
@@ -117,8 +159,10 @@ watching accept write the file / decline reject it.
 ## Dead ends checked and rejected (so we don't revisit them)
 
 - **`/ide` unix socket (context-only):** real, but only feeds active-file/selection
-  into the prompt. No diffs/approvals. Possible *future* add-on (richer context),
-  not the diff path.
+  into the prompt. No diffs/approvals. **Now implemented as a second, independent
+  channel** — see "The `/ide` context channel" below. It is *not* the diff path
+  (the app-server proxy is); the two run side by side, exactly as the real IDE
+  integration does.
 - **Hooks (`PreToolUse`/`PermissionRequest`):** codex has a Claude-style hook
   system, but it's under-development and `apply_patch` doesn't reliably fire
   `PreToolUse` (openai/codex#16732 — "hooks only fire for Bash"). Not viable for

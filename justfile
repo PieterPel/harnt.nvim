@@ -51,6 +51,19 @@ e2e-claude-hooks:
 e2e-codex:
     env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-codex.lua
 
+# Real-CLI e2e smoke: real `codex` TUI pulls editor context over harnt's hosted
+# /ide unix socket. Asserts codex issues an ide-context request we answer. Needs
+# `codex` authed. Nondeterministic; NOT part of `ci`.
+e2e-codex-ide:
+    env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-codex-ide.lua
+
+# Real-CLI e2e smoke: real `agy -p` routes its edit through harnt's PreToolUse
+# hook gate (diff/deny) and fires PreInvocation (context). Asserts the deny
+# blocks the write + the captured args map through the normalizer. Needs `agy`
+# authed + `nc`. Nondeterministic + real API calls; NOT part of `ci`.
+e2e-agy-hooks:
+    env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-agy-hooks.lua
+
 # Publish the rock to luarocks.org. Needs LUAROCKS_API_KEY. Runs on tag in CI,
 # but works locally too: `LUAROCKS_API_KEY=... just publish`.
 publish:

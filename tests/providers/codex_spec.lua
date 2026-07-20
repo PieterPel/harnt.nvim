@@ -156,4 +156,78 @@ describe("codex provider", function()
       assert.equals("update", cap.recorded[1].kind)
     end)
   end)
+
+  describe("review (diff feedback)", function()
+    it("declines the patch and types the comments into the TUI", function()
+      local rejected = false
+      local sent ---@type string?
+      codex.review({
+        comments = { { line = 3, text = "guard nil" }, { line = 8, text = "loop alloc" } },
+        path = "/repo/x.lua",
+        reject = function()
+          rejected = true
+        end,
+        send_text = function(text)
+          sent = text
+        end,
+        session = {} --[[@as harnt.Session]],
+      })
+      assert.is_true(rejected)
+      local s = assert(sent)
+      assert.is_truthy(s:find("x.lua", 1, true))
+      assert.is_truthy(s:find("L3: guard nil", 1, true))
+      assert.is_truthy(s:find("L8: loop alloc", 1, true))
+    end)
+
+    it("declines with no follow-up text when there are no comments", function()
+      local rejected, sent = false, false
+      codex.review({
+        comments = {},
+        path = "/repo/x.lua",
+        reject = function()
+          rejected = true
+        end,
+        send_text = function()
+          sent = true
+        end,
+        session = {} --[[@as harnt.Session]],
+      })
+      assert.is_true(rejected)
+      assert.is_false(sent)
+    end)
+  end)
+
+  describe("/ide context channel", function()
+    it("frame reader round-trips a length-prefixed JSON frame, tolerating chunking", function()
+      local reader = codex._ide_frame_reader()
+      local frame =
+        codex._ide_response({ type = "request", requestId = "r1", method = "ide-context" })
+      local mid = math.floor(#frame / 2)
+      -- a partial frame yields nothing yet
+      assert.same({}, reader.feed(frame:sub(1, mid)))
+      local out = reader.feed(frame:sub(mid + 1))
+      assert.equals(1, #out)
+      assert.equals("response", out[1].type)
+      assert.equals("r1", out[1].requestId)
+      assert.equals("success", out[1].resultType)
+      assert.equals("ide-context", out[1].method)
+      assert.is_table(out[1].result.ideContext)
+    end)
+
+    it("reads two frames from one chunk", function()
+      local reader = codex._ide_frame_reader()
+      local two = codex._ide_response({ requestId = "a" })
+        .. codex._ide_response({ requestId = "b" })
+      local out = reader.feed(two)
+      assert.equals(2, #out)
+      assert.equals("a", out[1].requestId)
+      assert.equals("b", out[2].requestId)
+    end)
+
+    it("_ide_context exposes activeFile + an openTabs list", function()
+      local ctx = codex._ide_context()
+      assert.is_not_nil(ctx.activeFile)
+      assert.is_table(ctx.openTabs)
+    end)
+  end)
 end)
