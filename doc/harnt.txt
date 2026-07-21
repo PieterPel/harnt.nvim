@@ -56,8 +56,8 @@ This registers the built-in providers (claude, codex, antigravity). Options:
     require("harnt").setup({
       keymaps = {
         diff = {
-          accept  = "<F9>",
-          reject  = "<F10>",
+          accept  = "<leader>a",
+          reject  = "<leader>r",
           comment = "<leader>c",
           review  = "<leader>R",
         },
@@ -108,8 +108,8 @@ require("harnt").statusline()
 These are buffer-local, active only inside a diff/review window (the winbar shows
 them). Configure via `opts.keymaps.diff`.
 
-    <F9>            Accept the diff.
-    <F10>           Reject the diff.
+    <leader>a       Accept the diff.
+    <leader>r       Reject the diff.
     <leader>c       Comment on the current line (prompts for text).
     <leader>R       Submit review: reject and send the comments as feedback.
 

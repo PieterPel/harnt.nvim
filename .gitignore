@@ -14,3 +14,9 @@ doc/tags
 
 # OS cruft
 .DS_Store
+
+# Local secrets (e.g. LUAROCKS_API_KEY for `just publish`)
+.env
+
+# Dev git worktrees (parallel-agent scratch)
+.worktrees/

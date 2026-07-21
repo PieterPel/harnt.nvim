@@ -4,9 +4,14 @@
 > editor layer. The agent keeps its own TUI — harnt never renders a chat box, so
 > no feature is ever lost.
 
-<!-- Demo: record with `just demo` (see DEMO.md), then:
-![harnt.nvim: two agents, one diff flow](./assets/demo.gif) -->
-_Demo GIF coming soon — `just demo` stages it; see [`DEMO.md`](./DEMO.md)._
+One diff flow, one approval popup, one keymap set — three different agents, each
+in its own native TUI, each reaching back into the same editor layer:
+
+| Claude Code | Codex | Antigravity |
+|---|---|---|
+| ![Claude Code diff review in harnt](./assets/claude.gif) | ![Codex diff review in harnt](./assets/codex.gif) | ![Antigravity diff review in harnt](./assets/antigravity.gif) |
+
+Each is recorded against the real CLI (`just demo`; see [`DEMO.md`](./DEMO.md)).
 
 **Status: beta.** Working end-to-end for **Claude Code**, **Codex**,
 **Antigravity (`agy`)**, and **OpenCode** — diffs, approvals, editor-context, a change-log, and one
@@ -132,8 +137,8 @@ appears. The keys are the same for every agent.
 
 | Key | Action |
 |---|---|
-| `<F9>` | accept the diff |
-| `<F10>` | reject the diff |
+| `<leader>a` | accept the diff |
+| `<leader>r` | reject the diff |
 | `<leader>c` | comment on the current line |
 | `<leader>R` | submit review (reject + send comments as feedback) |
 
@@ -141,7 +146,7 @@ All four are configurable:
 
 ```lua
 require("harnt").setup({
-  keymaps = { diff = { accept = "<F9>", reject = "<F10>", comment = "<leader>c", review = "<leader>R" } },
+  keymaps = { diff = { accept = "<leader>a", reject = "<leader>r", comment = "<leader>c", review = "<leader>R" } },
   -- diff = { presenter = fn },          -- swap the diff UI (default: side-by-side vimdiff)
   -- approvals = { chooser = fn },       -- swap the approval prompt (default: vim.ui.select)
 })

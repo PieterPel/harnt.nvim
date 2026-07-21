@@ -45,6 +45,13 @@ try:
 demo:
     env -u LUA_PATH -u LUA_CPATH nvim -u {{ justfile_directory() }}/scripts/demo-init.lua
 
+# Record one README demo GIF end-to-end with vhs: launches the seeded project,
+# drives the real agent, responds to the diff opening, and trims to the action.
+# Args: <agent> [scenario] — e.g. `just record-demo codex`, `just record-demo
+# antigravity review`. Writes assets/<agent>.gif. Needs the agent CLI authed.
+record-demo agent scenario="accept":
+    bash {{ justfile_directory() }}/scripts/record-demo.sh {{ agent }} {{ scenario }} {{ agent }} trust
+
 # Real-CLI e2e smoke vs Claude (needs `claude` on PATH + a trusted cwd).
 # Nondeterministic + real API calls; deliberately NOT part of `ci`.
 e2e-claude:
@@ -60,6 +67,13 @@ e2e-claude-hooks:
 # writes the file. Nondeterministic + real API calls; NOT part of `ci`.
 e2e-codex:
     env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-codex.lua
+
+# Real-CLI e2e for the LIVE codex `--remote` path: stands up the real proxy AND
+# spawns the real native `codex --remote` client, asserting the client's edit
+# produces a harnt diff (the hop the app-server-only e2e can't cover). Needs
+# `codex` authed. Nondeterministic + real API calls; NOT part of `ci`.
+e2e-codex-remote:
+    env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-codex-remote.lua
 
 # Real-CLI e2e smoke: real `codex` TUI pulls editor context over harnt's hosted
 # /ide unix socket. Asserts codex issues an ide-context request we answer. Needs

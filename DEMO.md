@@ -1,59 +1,54 @@
-# DEMO.md — recording the README demo
+# DEMO.md — recording the README demos
 
 The single highest-leverage marketing asset for an nvim plugin is a short GIF of
-it working. This is the storyboard + how to capture it.
+it working. harnt records one **per agent**, fully automated, against the *real*
+CLI — no hand-driving, no post-hoc frame cutting.
 
-## The stage
+## Record one
 
 ```sh
-just demo
+just record-demo codex            # → assets/codex.gif
+just record-demo antigravity      # → assets/antigravity.gif
+just record-demo claude           # → assets/claude.gif
+just record-demo codex review     # comment + reject instead of accept
 ```
 
-Launches a clean Neovim (only harnt loaded) in a fresh temp git project seeded
-with a small buggy `fizzbuzz.lua`, with `<leader>` demo keymaps and an on-launch
-help popup. Nothing touches your real config. You need at least one agent CLI
-installed + authenticated (`claude`, `codex`, or `agy`).
+Each needs the agent CLI installed + authenticated (run inside `nix develop` so
+`codex` / `agy` / `claude` are on `$PATH`). The GIFs are wired into `README.md`.
 
-## Storyboard (~30–40s)
+## How it works (no corner-cutting)
 
-Keep it tight — one loop per agent, same keys throughout.
+Two pieces, both agent-agnostic:
 
-1. **Open on the seeded file.** The help popup shows the keys; let it sit ~1s.
-2. **Launch an agent** — `<leader>ac` (Claude). Its real TUI opens in a split.
-3. **Ask it to work** — type in the agent's TUI:
-   *"Fix the off-by-one in fizzbuzz.lua and add a short doc comment."*
-4. **The diff appears in Neovim** (not a chat box) — the winbar shows
-   `F9 accept · F10 reject · <leader>c comment · <leader>R review`.
-5. **Accept with `F9`.** The file updates; the agent continues in its own TUI.
-6. **The payoff line:** switch agents — `<leader>ax` (Codex) — and show the
-   *same keys* drive its diff. This is the whole pitch: one editor surface, every
-   agent, native TUIs intact.
-7. *(Optional)* `<leader>aC` to show the change-log, or reject + `<leader>c` a
-   comment to show review feedback flowing back.
+- **`scripts/demo-gif-init.lua`** — a clean Neovim (only harnt loaded) in a fresh
+  temp git project seeded with a genuinely buggy `fizzbuzz.lua`. The chosen agent
+  (`HARNT_DEMO_AGENT`) launches with the fix as an *initial prompt*, so no typing
+  into the agent's TUI is scripted. Crucially, harnt **responds to the diff
+  opening**: it wraps `diff.open`/`diff.open_review` so that a readable beat after
+  the diff actually appears, it acts the way the review keys do — accept, or (for
+  `HARNT_DEMO_SCENARIO=review`) comment + reject. Timing is driven by the real
+  open event, not a guessed `sleep`, so every take is tight regardless of model
+  latency.
+- **`scripts/record-demo.sh`** — writes a vhs tape that launches that init,
+  records to mp4, detects the end of on-screen activity by frame-hashing at 1 fps
+  (so the trailing idle is dropped, not the content), then trims to the action and
+  applies a light uniform speedup → `assets/<agent>.gif`.
 
-On-screen caption to add in post: **"Two agents. One diff flow. No feature lost."**
+## The scenarios
 
-## Capturing it
+- `accept` (default) — the agent proposes an edit; harnt's diff opens in Neovim
+  (never a chat box), dwells so it's readable, then accepts. The winbar shows the
+  real keys: `<leader>a accept · <leader>r reject · <leader>c comment ·
+  <leader>R review`.
+- `review` — instead of accepting, harnt attaches an inline comment and submits a
+  review (reject + the comment flows back to the agent as feedback).
+- `changelog` — accept, then open the read-only change-log view.
 
-Any of these; pick what you have.
+## The pitch the set makes
 
-- **vhs** (deterministic, great for READMEs): scripted keystrokes → GIF.
-  Because the agents make live API calls, a fully-scripted tape is flaky — record
-  the terminal live with vhs's `Screenshot`/manual mode, or use asciinema.
-- **asciinema + agg**: `asciinema rec demo.cast` → drive it → `agg demo.cast
-  demo.gif`. Crisp, small, text-selectable source.
-- **Screen recorder** (QuickTime / OBS / peek) → trim → convert to GIF. Simplest.
+Three agents, three different reverse channels (Claude WebSocket, Codex
+app-server proxy, Antigravity lifecycle hooks) — and the **same diff flow, same
+approval popup, same keymaps** in every GIF, each agent's own TUI untouched in a
+split. One editor surface, every agent, no feature lost.
 
-Target: ≤ 6 MB GIF or a short mp4, ~800px wide, 12–15 fps.
-
-## Wiring it into the README
-
-Drop the file in `assets/` and replace the placeholder near the top of
-`README.md`:
-
-```markdown
-![harnt.nvim: two agents, one diff flow](./assets/demo.gif)
-```
-
-Record one clean take per agent you want to feature; the Claude→Codex switch is
-the money shot.
+Target: each GIF stays a few hundred KB to a couple MB, ~1200px wide.

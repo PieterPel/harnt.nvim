@@ -31,7 +31,13 @@ _: {
             # Misc
             trim-trailing-whitespace.enable = true;
             check-merge-conflicts.enable = true;
-            check-added-large-files.enable = true;
+            check-added-large-files = {
+              enable = true;
+              # Default is 500 KB; the README demo GIFs (colorful full-screen
+              # agent TUIs) are legitimately larger. 1 MB still guards against
+              # accidental videos / binary blobs.
+              args = [ "--maxkb=1024" ];
+            };
           };
         };
       };
