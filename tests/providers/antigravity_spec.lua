@@ -39,7 +39,7 @@ describe("antigravity provider", function()
   end)
 
   describe("_normalize_edit", function()
-    it("renders a real unified diff when path + content are recoverable", function()
+    it("returns full new + old content for a full-content edit", function()
       local tmp = vim.fn.tempname()
       vim.fn.writefile({ "line one", "line two" }, tmp)
       local edit = antigravity._normalize_edit("edit_file", {
@@ -48,8 +48,25 @@ describe("antigravity provider", function()
       })
       assert.equals(tmp, edit.path)
       assert.equals("update", edit.kind)
-      local text = table.concat(edit.patch, "\n")
-      assert.is_truthy(text:find("line two changed", 1, true))
+      assert.same({ "line one", "line two" }, edit.old)
+      assert.is_truthy(table.concat(edit.new, "\n"):find("line two changed", 1, true))
+      os.remove(tmp)
+    end)
+
+    it("splices a replace_file_content (search→replace) into the on-disk file", function()
+      local tmp = vim.fn.tempname()
+      vim.fn.writefile({ "keep", "  for i = 1, n - 1 do", "keep2" }, tmp)
+      local edit = antigravity._normalize_edit("replace_file_content", {
+        TargetFile = tmp,
+        TargetContent = "  for i = 1, n - 1 do",
+        ReplacementContent = "  for i = 1, n do",
+      })
+      assert.equals(tmp, edit.path)
+      -- full spliced file: the replacement present, the buggy line gone, others kept
+      local new = table.concat(edit.new, "\n")
+      assert.is_truthy(new:find("for i = 1, n do", 1, true))
+      assert.is_falsy(new:find("n %- 1", 1, false))
+      assert.is_truthy(new:find("keep2", 1, true))
       os.remove(tmp)
     end)
 
@@ -57,13 +74,13 @@ describe("antigravity provider", function()
       local tmp = vim.fn.tempname()
       local edit = antigravity._normalize_edit("write_file", { path = tmp, content = "hi\n" })
       assert.equals("add", edit.kind)
+      assert.same({}, edit.old)
     end)
 
     it("falls back to showing raw args when fields are unrecognized", function()
       local edit = antigravity._normalize_edit("mystery_tool", { weird = "shape", n = 3 })
       assert.equals("(mystery_tool)", edit.path)
-      local text = table.concat(edit.patch, "\n")
-      assert.is_truthy(text:find("weird", 1, true))
+      assert.is_truthy(table.concat(edit.new, "\n"):find("weird", 1, true))
     end)
   end)
 

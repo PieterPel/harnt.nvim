@@ -510,7 +510,7 @@ function M.start(ctx)
       local path = (file_changes[1] and file_changes[1].path) or "(codex change)"
       bus:emit(events.TYPES.diff_ready, { provider = { changes = file_changes }, path = path })
       diff.open_review(
-        { path = path, patch = render_patch(file_changes), origin = M.name },
+        { path = path, diff = render_patch(file_changes), origin = M.name },
         function(result)
           resolve(result.accepted)
         end

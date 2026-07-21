@@ -129,7 +129,7 @@ describe("diff comments", function()
   it("tags and exposes the origin provider, and folds comments into the result", function()
     local got
     local id = diff.open_review(
-      { path = "/tmp/f.lua", patch = "@@\n-a\n+b", origin = "codex" },
+      { path = "/tmp/f.lua", diff = "@@\n-a\n+b", origin = "codex" },
       function(r)
         got = r
       end
@@ -171,7 +171,7 @@ describe("diff default presenter", function()
     assert.is_truthy(winbar:find("accept"))
 
     diff.reject(id)
-    diff.set_keys({ accept = "<F9>", reject = "<F10>" }) -- restore default
+    diff.set_keys({ accept = "<leader>a", reject = "<leader>r" }) -- restore default
   end)
 end)
 
@@ -236,7 +236,7 @@ describe("diff.open_review (review-only)", function()
   end)
 
   it("renders the patch in a guarded scratch buffer", function()
-    local id = diff.open_review({ path = "/x.txt", patch = "@@ -1 +1 @@\n-a\n+b" }, function() end)
+    local id = diff.open_review({ path = "/x.txt", diff = "@@ -1 +1 @@\n-a\n+b" }, function() end)
     assert(review_view, "review presenter should have been called")
     assert.same(
       { "@@ -1 +1 @@", "-a", "+b" },
@@ -251,7 +251,7 @@ describe("diff.open_review (review-only)", function()
     local path = vim.fn.tempname()
     vim.fn.writefile({ "ORIGINAL" }, path)
     local result
-    local id = diff.open_review({ path = path, patch = "+NEW" }, function(r)
+    local id = diff.open_review({ path = path, diff = "+NEW" }, function(r)
       result = r
     end)
     diff.accept(id)
@@ -263,7 +263,7 @@ describe("diff.open_review (review-only)", function()
 
   it("reject resolves accepted=false", function()
     local result
-    local id = diff.open_review({ path = "/x", patch = "+z" }, function(r)
+    local id = diff.open_review({ path = "/x", diff = "+z" }, function(r)
       result = r
     end)
     diff.reject(id)
@@ -271,7 +271,7 @@ describe("diff.open_review (review-only)", function()
   end)
 
   it("supports line comments on the patch buffer", function()
-    local id = diff.open_review({ path = "/x", patch = "a\nb\nc" }, function() end)
+    local id = diff.open_review({ path = "/x", diff = "a\nb\nc" }, function() end)
     diff.add_comment(id, 2, "look here")
     assert.same({ { line = 2, text = "look here" } }, diff.comments(id))
     diff.reject(id)

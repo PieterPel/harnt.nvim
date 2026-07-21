@@ -228,7 +228,7 @@ describe("manager.review", function()
     manager.launch("alpha", { open_terminal = fake_terminal })
     manager.launch("beta", { open_terminal = fake_terminal })
 
-    local id = diff.open_review({ path = "/x", patch = "y", origin = "beta" }, function() end)
+    local id = diff.open_review({ path = "/x", diff = "y", origin = "beta" }, function() end)
     manager.review(id)
 
     diff.set_review_presenter(nil)

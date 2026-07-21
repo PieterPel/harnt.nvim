@@ -64,6 +64,11 @@ local CONTENT_FIELDS = {
   "text",
   "contents",
 }
+-- `replace_file_content` / `multi_replace_file_content` are search→replace, not
+-- full content: an old snippet and its replacement (verified: `TargetContent` /
+-- `ReplacementContent`).
+local REPLACE_OLD = { "TargetContent", "target_content", "old_string", "search" }
+local REPLACE_NEW = { "ReplacementContent", "replacement_content", "new_string", "replace" }
 
 --- First string-valued field of `args` named in `fields`, or nil.
 ---@param args table
@@ -78,36 +83,71 @@ local function pick(args, fields)
   return nil
 end
 
---- A normalized proposed change ready for the diff service.
+--- A normalized proposed change: the change as CONTENT (old + new full text).
+--- harnt's diff service renders it — antigravity does no display work.
 ---@class harnt.antigravity.Edit
 ---@field path string
 ---@field kind string "add" | "update"
----@field patch string[] unified-diff (or fallback) lines
+---@field new string[] full proposed content
+---@field old string[] baseline the new content replaces (empty = new file / snippet)
 
---- Turn an edit tool's args into a reviewable change. When we can recover the
---- target path and full new content we render a real unified diff against the
---- file on disk; otherwise we fall back to displaying the raw args so the user can
---- still see what's proposed and allow/deny.
+--- Turn an edit tool's args into old/new content for the diff service. Handles
+--- the two real agy shapes — full-content (`write_to_file`/`edit_file`) and
+--- search→replace (`replace_file_content`, spliced into the on-disk file) — and
+--- falls back to showing the raw args for an unrecognized tool.
 ---@param name string tool name
 ---@param args table tool args
 ---@return harnt.antigravity.Edit
 function M._normalize_edit(name, args)
   local path = pick(args, PATH_FIELDS)
+  local disk = {} ---@type string[]
+  local exists = false
+  if path and vim.fn.filereadable(path) == 1 then
+    exists = true
+    disk = vim.fn.readfile(path)
+  end
+
+  -- Full-content edit (write_to_file / edit_file).
   local content = pick(args, CONTENT_FIELDS)
   if path and content then
-    local exists = vim.fn.filereadable(path) == 1
-    local old = exists and (table.concat(vim.fn.readfile(path), "\n") .. "\n") or ""
-    local new = content:sub(-1) == "\n" and content or (content .. "\n")
-    ---@diagnostic disable-next-line: deprecated
-    local unified = vim.diff(old, new, {}) --[[@as string]]
-    local patch = (unified ~= nil and unified ~= "") and vim.split(unified, "\n", { plain = true })
-      or { "(no textual change)" }
-    return { path = path, kind = exists and "update" or "add", patch = patch }
+    return {
+      path = path,
+      kind = exists and "update" or "add",
+      new = vim.split(content, "\n", { plain = true }),
+      old = disk,
+    }
   end
+
+  -- Search→replace edit (replace_file_content): splice the replacement into the
+  -- on-disk file. If the target text isn't found verbatim, diff the snippets.
+  local old_snip = pick(args, REPLACE_OLD)
+  local new_snip = pick(args, REPLACE_NEW)
+  if path and old_snip and new_snip then
+    local text = table.concat(disk, "\n")
+    local s, e = text:find(old_snip, 1, true) -- plain (no pattern magic)
+    if s and e then
+      local spliced = text:sub(1, s - 1) .. new_snip .. text:sub(e + 1)
+      return {
+        path = path,
+        kind = "update",
+        new = vim.split(spliced, "\n", { plain = true }),
+        old = disk,
+      }
+    end
+    return {
+      path = path,
+      kind = "update",
+      new = vim.split(new_snip, "\n", { plain = true }),
+      old = vim.split(old_snip, "\n", { plain = true }),
+    }
+  end
+
+  -- Unknown shape: show the raw args as an addition so it's still reviewable.
   return {
     path = path or ("(%s)"):format(name),
     kind = "update",
-    patch = vim.split(vim.inspect(args), "\n", { plain = true }),
+    new = vim.split(vim.inspect(args), "\n", { plain = true }),
+    old = {},
   }
 end
 
@@ -221,27 +261,30 @@ function M._handle_tool_use(call, respond)
 
   if EDIT_TOOLS[name] then
     local edit = M._normalize_edit(name, args)
-    diff.open_review({ path = edit.path, patch = edit.patch, origin = M.name }, function(result)
-      if result.accepted then
-        change_log.record({
-          path = edit.path,
-          kind = edit.kind,
-          diff = table.concat(edit.patch, "\n"),
-          provider = M.name,
-        })
-        -- Our accepted diff IS the approval; grant agy's write permission so it
-        -- doesn't double-prompt (verified end-to-end — see e2e-agy-hooks).
-        respond({
-          decision = "allow",
-          permissionOverrides = { ("write_file(%s)"):format(edit.path) },
-        })
-      else
-        -- Deny, folding any inline review comments into the `reason` — agy's
-        -- native feedback channel (the reason is shown to the model), so a
-        -- rejected diff carries the user's notes back and the agent can revise.
-        respond({ decision = "deny", reason = M._deny_reason(result.comments) })
+    diff.open_review(
+      { path = edit.path, new = edit.new, old = edit.old, origin = M.name },
+      function(result)
+        if result.accepted then
+          change_log.record({
+            path = edit.path,
+            kind = edit.kind,
+            diff = table.concat(edit.new, "\n"),
+            provider = M.name,
+          })
+          -- Our accepted diff IS the approval; grant agy's write permission so it
+          -- doesn't double-prompt (verified end-to-end — see e2e-agy-hooks).
+          respond({
+            decision = "allow",
+            permissionOverrides = { ("write_file(%s)"):format(edit.path) },
+          })
+        else
+          -- Deny, folding any inline review comments into the `reason` — agy's
+          -- native feedback channel (the reason is shown to the model), so a
+          -- rejected diff carries the user's notes back and the agent can revise.
+          respond({ decision = "deny", reason = M._deny_reason(result.comments) })
+        end
       end
-    end)
+    )
     return
   end
 

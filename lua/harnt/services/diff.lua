@@ -28,6 +28,7 @@ local review_handler = nil
 ---@field proposed string[] proposed new content
 ---@field original? string[] baseline; defaults to the file's current on-disk content
 ---@field origin? string opaque tag naming who opened it (provider name); routes review feedback back to the right agent when several run at once
+---@field apply? boolean write the accepted content to disk (default true). Set false for agents that apply the edit THEMSELVES from the returned content (e.g. Claude's openDiff): harnt does a virtual save — resolves with the content but doesn't touch the file — so the agent's own writer doesn't hit a "file changed since read" conflict.
 
 ---@class harnt.diff.Result
 ---@field accepted boolean
@@ -62,7 +63,8 @@ local entries = {}
 local next_id = 0
 
 --- Keys shown in the winbar + bound in the diff (config-settable).
-local keys = { accept = "<F9>", reject = "<F10>", comment = "<leader>c", review = "<leader>R" }
+local keys =
+  { accept = "<leader>a", reject = "<leader>r", comment = "<leader>c", review = "<leader>R" }
 
 --- Override the diff keys (wired from user config).
 ---@param opts { accept?: string, reject?: string, comment?: string, review?: string }
@@ -199,6 +201,21 @@ local function review_presenter(view)
   vim.bo[view.proposed_buf].filetype = "diff"
   vim.wo[win].winbar = winbar_hint()
 
+  -- Providers render full-file context, so the whole file is visible; start the
+  -- view focused on the first actual change (a `+`/`-` line, not a `@@`/`+++`/
+  -- `---` header) and center it.
+  local lines = vim.api.nvim_buf_get_lines(view.proposed_buf, 0, -1, false)
+  for i, l in ipairs(lines) do
+    local c = l:sub(1, 1)
+    if (c == "+" or c == "-") and l:sub(1, 3) ~= "+++" and l:sub(1, 3) ~= "---" then
+      pcall(vim.api.nvim_win_set_cursor, win, { i, 0 })
+      vim.api.nvim_win_call(win, function()
+        vim.cmd("normal! zz")
+      end)
+      break
+    end
+  end
+
   bind_actions(view.proposed_buf)
   bind_comment(view.proposed_buf)
 
@@ -295,15 +312,47 @@ function M.open(spec, callback)
   return id
 end
 
+--- Render a review diff the SERVICE owns: a full-file unified diff (all context,
+--- so the whole file is visible) of `old` vs `new`. Providers pass the change as
+--- content; how it's displayed (full context, focus, filetype) lives here, once,
+--- not in each provider. The `review_presenter` then scrolls to the first change.
+---@param old string[]
+---@param new string[]
+---@return string[]
+local function render_review_diff(old, new)
+  local a = table.concat(old, "\n")
+  local b = table.concat(new, "\n")
+  if a ~= "" then
+    a = a .. "\n"
+  end
+  if b ~= "" then
+    b = b .. "\n"
+  end
+  ---@diagnostic disable-next-line: deprecated
+  local unified = vim.diff(a, b, { ctxlen = 1000000 }) --[[@as string]]
+  if unified == nil or unified == "" then
+    return { "(no textual change)" }
+  end
+  return vim.split(unified, "\n", { plain = true })
+end
+
+--- The change to review. A provider supplies the DATA it has; the service owns
+--- how it's displayed (full context, focus, filetype). Two forms:
+---  * `new` (+ optional `old`): full proposed content — the service computes the
+---    full-file diff. Preferred when the agent gives us the resulting content.
+---  * `diff`: a unified diff the agent already produced (Codex updates, OpenCode
+---    `apply_patch`), when full content isn't available to reconstruct cheaply.
+--- Exactly one is required.
 ---@class harnt.diff.ReviewSpec
 ---@field path string file the change targets (for labeling)
----@field patch string|string[] pre-rendered change (unified diff or content) shown in a filetype=diff buffer
+---@field new? string[] full proposed content; the service computes the diff
+---@field old? string[] baseline; defaults to the file's current on-disk content
+---@field diff? string|string[] a ready-made unified diff, when there's no full content
 ---@field origin? string who opened it (provider name), for feedback routing
 
---- Open a *review-only* diff: render a pre-supplied `patch` and resolve accept/
---- reject WITHOUT writing to disk. For agents that apply their own edits and only
---- need a verdict (e.g. Codex over app-server, which owns the apply). Shares the
---- comment/accept/reject/review machinery with `M.open`. `callback` fires once.
+--- Open a *review-only* diff and resolve accept/reject WITHOUT writing to disk
+--- (the agent applies its own edit; we only report the verdict). Shares the
+--- comment/accept/reject machinery with `M.open`. `callback` fires once.
 ---@param spec harnt.diff.ReviewSpec
 ---@param callback fun(result: harnt.diff.Result)
 ---@return integer id
@@ -311,8 +360,14 @@ function M.open_review(spec, callback)
   next_id = next_id + 1
   local id = next_id
 
-  local lines = type(spec.patch) == "table" and spec.patch
-    or vim.split(spec.patch --[[@as string]], "\n", { plain = true })
+  local lines ---@type string[]
+  if spec.new then
+    lines = render_review_diff(spec.old or read_lines(spec.path), spec.new)
+  elseif type(spec.diff) == "table" then
+    lines = spec.diff --[[@as string[] ]]
+  else
+    lines = vim.split(spec.diff --[[@as string]] or "", "\n", { plain = true })
+  end
   local patch_buf = scratch(lines)
   local presentation = review_presenter_fn({ path = spec.path, proposed_buf = patch_buf })
 
@@ -353,8 +408,12 @@ function M.accept(id)
     return true
   end
   local content = vim.api.nvim_buf_get_lines(e.proposed_buf, 0, -1, false)
+  local virtual = e.spec.apply == false -- agent applies the returned content itself
   teardown(id)
-  local ok, err = apply.apply_file(e.spec.path, content)
+  local ok, err = true, nil
+  if not virtual then
+    ok, err = apply.apply_file(e.spec.path, content)
+  end
   e.callback({ accepted = true, content = content, comments = comments })
   return ok, err
 end

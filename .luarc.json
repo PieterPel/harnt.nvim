@@ -20,5 +20,5 @@
   ],
   "workspace.library": ["$VIMRUNTIME/lua", "${3rd}/luv/library"],
   "workspace.checkThirdParty": false,
-  "workspace.ignoreDir": [".direnv", "result"]
+  "workspace.ignoreDir": [".direnv", "result", ".worktrees"]
 }

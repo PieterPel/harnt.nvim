@@ -458,7 +458,7 @@ function M.start(ctx)
       -- edit once; reject → decline, carrying any inline comments as free-text
       -- feedback on the reply (OpenCode's reject supports a message — lossless).
       diff.open_review(
-        { path = rendered.path, patch = rendered.lines, origin = M.name },
+        { path = rendered.path, diff = rendered.lines, origin = M.name },
         function(result)
           done(result.accepted, reject_message(rendered.path, result.comments))
         end

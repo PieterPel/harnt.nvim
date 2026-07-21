@@ -38,9 +38,12 @@ local builtin = {
     vim.api.nvim_win_set_buf(win, buf)
 
     local on_exit = opts.on_exit
+    -- jobstart rejects an empty Lua table for `env` (it serializes to a vim list,
+    -- not a dict → E475). Pass nil when there are no vars to inject.
+    local env = (opts.env and next(opts.env) ~= nil) and opts.env or nil
     local job = vim.fn.jobstart(opts.cmd, {
       term = true,
-      env = opts.env,
+      env = env,
       cwd = opts.cwd,
       on_exit = on_exit and function(_id, code)
         on_exit(code)

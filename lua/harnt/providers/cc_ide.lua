@@ -41,18 +41,24 @@ function M.tools(_ctx)
         local target = args.new_file_path or args.old_file_path
         local proposed = vim.split(args.new_file_contents or "", "\n")
         -- Tag with the provider so review feedback routes to Claude's TUI even
-        -- when other agents are running (this surface is Claude-only).
-        diff.open({ path = target, proposed = proposed, origin = "claude" }, function(result)
-          if result.accepted then
-            -- Claude expects TWO content items on save: the marker + the final
-            -- (possibly user-edited) content. Without the content it can't treat
-            -- the edit as resolved and re-prompts in its TUI. (Per claudecode.nvim.)
-            local final = table.concat(result.content or proposed, "\n")
-            respond(mcp.texts({ "FILE_SAVED", final }))
-          else
-            respond(mcp.texts({ "DIFF_REJECTED", args.tab_name or target }))
+        -- when other agents are running (this surface is Claude-only). `apply =
+        -- false`: Claude writes the file itself from the FILE_SAVED content, so
+        -- harnt must NOT write it — otherwise Claude's edit tool sees the file
+        -- change under it and aborts with "file changed since read".
+        diff.open(
+          { path = target, proposed = proposed, origin = "claude", apply = false },
+          function(result)
+            if result.accepted then
+              -- Claude expects TWO content items on save: the marker + the final
+              -- (possibly user-edited) content. Without the content it can't treat
+              -- the edit as resolved and re-prompts in its TUI. (Per claudecode.nvim.)
+              local final = table.concat(result.content or proposed, "\n")
+              respond(mcp.texts({ "FILE_SAVED", final }))
+            else
+              respond(mcp.texts({ "DIFF_REJECTED", args.tab_name or target }))
+            end
           end
-        end)
+        )
       end,
     },
     {

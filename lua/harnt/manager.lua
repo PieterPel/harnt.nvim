@@ -50,7 +50,8 @@ function M.launch(name, opts)
     return nil
   end
 
-  local session = provider.start(opts.ctx or {})
+  local ctx = opts.ctx or {}
+  local session = provider.start(ctx)
   ---@type harnt.manager.Instance
   local instance = { name = name, session = session }
   instances[name] = instance
@@ -81,9 +82,14 @@ function M.launch(name, opts)
     local info = (session --[[@as { info: harnt.reverse_mcp.Info }]]).info
     local env = provider.env(info)
     local open = opts.open_terminal or terminal.open
+    -- Launch the agent in the session's working directory, so it finds whatever
+    -- that session installed there (Antigravity's `.agents/hooks.json`, etc.).
+    -- Fall back to the explicit ctx cwd, else nvim's cwd (what start() used).
+    local session_info = session --[[@as { info: { cwd?: string } } ]]
     instance.terminal = open({
       cmd = cmd,
       env = env,
+      cwd = ctx.cwd or (session_info.info and session_info.info.cwd) or nil,
       on_exit = function()
         M.stop(name)
       end,
