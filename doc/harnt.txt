@@ -50,7 +50,8 @@ Run |:checkhealth| `harnt` to see, per provider, what is present and missing.
 >lua
     require("harnt").setup({})
 <
-This registers the built-in providers (claude, codex, antigravity). Options:
+This registers the built-in providers (claude, codex, antigravity, opencode).
+Options:
 
 >lua
     require("harnt").setup({
@@ -74,7 +75,7 @@ require("harnt").setup({opts})
 
                                                     *harnt.register_provider()*
 require("harnt").register_provider({provider})
-    Register a custom agent. See |harnt-extending| and PROVIDERS.md.
+    Register a custom agent. See |harnt-extending| and docs/PROVIDERS.md.
 
                                                           *harnt.statusline()*
 require("harnt").statusline()
@@ -164,6 +165,6 @@ provider implements `name`, `detect()`, `start(ctx)`, and optionally `cmd`/`env`
 providers are a thin specialization of the reverse-MCP base and delegate to the
 shared services (`context` / `diff` / `approvals` / `apply` / `changes`).
 
-Full contract, worked example, and a checklist: PROVIDERS.md in the repo.
+Full contract, worked example, and a checklist: docs/PROVIDERS.md in the repo.
 
 vim:tw=78:ts=8:noet:ft=help:norl:
