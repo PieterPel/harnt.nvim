@@ -92,6 +92,86 @@ local function render_patch(changes)
   return lines
 end
 
+--- Read a file's lines, or {} if absent / unreadable.
+---@param path string
+---@return string[]
+local function read_lines(path)
+  if vim.fn.filereadable(path) == 1 then
+    return vim.fn.readfile(path)
+  end
+  return {}
+end
+
+--- Apply a unified diff to `old`, returning the resulting full content. Codex's
+--- diffs are exact (generated against the file it read), so this is a plain hunk
+--- walk: copy untouched lines between hunks; inside a hunk emit context (` `) and
+--- additions (`+`) and drop removals (`-`). Header/marker lines are skipped.
+---@param old string[]
+---@param diff_str string
+---@return string[]
+local function apply_unified_diff(old, diff_str)
+  local new = {}
+  local oi = 1 -- next old line to consume (1-based)
+  local dlines = vim.split(diff_str, "\n", { plain = true })
+  local i = 1
+  while i <= #dlines do
+    local line = dlines[i] --[[@as string]]
+    local start = line:match("^@@%s*%-(%d+)")
+    if start then
+      -- copy untouched old lines up to the hunk's start
+      while oi < tonumber(start) do
+        new[#new + 1] = old[oi]
+        oi = oi + 1
+      end
+      i = i + 1
+      while i <= #dlines do
+        local hl = dlines[i] --[[@as string]]
+        local c = hl:sub(1, 1)
+        if c == "@" then
+          break -- next hunk header
+        elseif c == " " then
+          new[#new + 1] = hl:sub(2)
+          oi = oi + 1
+        elseif c == "-" then
+          oi = oi + 1
+        elseif c == "+" then
+          new[#new + 1] = hl:sub(2)
+        end -- "\ No newline…" and blank split-tail lines: ignore
+        i = i + 1
+      end
+    else
+      i = i + 1 -- pre-hunk header lines (---, +++, diff …)
+    end
+  end
+  while oi <= #old do -- untouched tail
+    new[#new + 1] = old[oi]
+    oi = oi + 1
+  end
+  return new
+end
+
+--- Reconstruct a change's full before/after content so the diff service can show
+--- the WHOLE file (focused on the change), consistent with the other providers —
+--- rather than only codex's patch hunk. `add` carries full content (or a unified
+--- diff); `update` is a unified diff against the on-disk file; `delete` empties it.
+---@param change harnt.codex.Change
+---@return string[] old, string[] new
+local function reconstruct(change)
+  local old = (change.kind == "add") and {} or read_lines(change.path)
+  if change.kind == "delete" then
+    return old, {}
+  end
+  local body = change.diff or ""
+  if body:match("\n@@") or body:match("^@@") then
+    return old, apply_unified_diff(old, body)
+  end
+  -- No hunk headers: codex handed us the file's full content (an add).
+  return old, vim.split(body, "\n", { plain = true })
+end
+
+--- Exposed for tests: reconstruct a change's full before/after content.
+M._reconstruct = reconstruct
+
 --- Wiring the router needs — all pure functions, injected so the tap logic is
 --- unit-testable without spawning codex or opening windows.
 ---@class harnt.codex.RouterIO
@@ -509,12 +589,20 @@ function M.start(ctx)
     open_review = function(file_changes, resolve)
       local path = (file_changes[1] and file_changes[1].path) or "(codex change)"
       bus:emit(events.TYPES.diff_ready, { provider = { changes = file_changes }, path = path })
-      diff.open_review(
-        { path = path, diff = render_patch(file_changes), origin = M.name },
-        function(result)
-          resolve(result.accepted)
-        end
-      )
+      -- One file: reconstruct the whole before/after so the service renders the
+      -- full file focused on the change, like the other providers. Multiple files
+      -- in one approval: fall back to the combined patch (a single full-file view
+      -- can't show them all), so nothing is hidden.
+      local spec = { path = path, origin = M.name }
+      if #file_changes == 1 then
+        local old, new = reconstruct(file_changes[1])
+        spec.old, spec.new = old, new
+      else
+        spec.diff = render_patch(file_changes)
+      end
+      diff.open_review(spec, function(result)
+        resolve(result.accepted)
+      end)
     end,
     request_command = function(params, resolve)
       approvals.request({

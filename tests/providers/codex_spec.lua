@@ -239,4 +239,43 @@ describe("codex provider", function()
       assert.is_table(ctx.openTabs)
     end)
   end)
+
+  describe("_reconstruct (full-file before/after)", function()
+    --- Write lines to a fresh temp file and return its path.
+    ---@param lines string[]
+    local function tmpfile(lines)
+      local p = vim.fn.tempname()
+      vim.fn.writefile(lines, p)
+      return p
+    end
+
+    it("applies a unified diff against the on-disk file to rebuild the whole file", function()
+      local path = tmpfile({ "line one", "line two", "line three" })
+      local diff = "@@ -2,1 +2,1 @@\n-line two\n+LINE TWO\n"
+      local old, new = codex._reconstruct({ path = path, kind = "update", diff = diff })
+      assert.same({ "line one", "line two", "line three" }, old)
+      -- untouched lines preserved, only the hunk line changed
+      assert.same({ "line one", "LINE TWO", "line three" }, new)
+    end)
+
+    it("handles a multi-line hunk with adds and removals, keeping the tail", function()
+      local path = tmpfile({ "a", "b", "c", "d", "e" })
+      local diff = "@@ -2,3 +2,2 @@\n b\n-c\n-d\n+C\n e\n"
+      local _, new = codex._reconstruct({ path = path, kind = "update", diff = diff })
+      assert.same({ "a", "b", "C", "e" }, new)
+    end)
+
+    it("treats an `add` with no hunk headers as full content, old empty", function()
+      local old, new = codex._reconstruct({ path = "/nope.txt", kind = "add", diff = "hi\nthere" })
+      assert.same({}, old)
+      assert.same({ "hi", "there" }, new)
+    end)
+
+    it("empties the file for a `delete`", function()
+      local path = tmpfile({ "gone", "soon" })
+      local old, new = codex._reconstruct({ path = path, kind = "delete", diff = "" })
+      assert.same({ "gone", "soon" }, old)
+      assert.same({}, new)
+    end)
+  end)
 end)

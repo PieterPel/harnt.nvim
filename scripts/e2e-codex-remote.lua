@@ -42,16 +42,23 @@ vim.fn.writefile({
   "fizzbuzz(15)",
 }, target)
 
-local tapped, accepted = false, false
+local tapped, accepted, full_file = false, false, false
 
 -- Intercept the diff service the way the demo does: record the tap, auto-accept.
+-- A single-file codex change is now reconstructed to full before/after content
+-- (spec.new), so assert we got the WHOLE file, not just a patch hunk.
 diff.open_review = function(spec, cb)
   tapped = true
   log(("tapped file change: %s"):format(tostring(spec.path)))
-  log(
-    "diff body:\n"
-      .. (type(spec.diff) == "table" and table.concat(spec.diff, "\n") or tostring(spec.diff))
-  )
+  if type(spec.new) == "table" then
+    full_file = #spec.new > 3 -- the seeded fizzbuzz is 6 lines; a hunk would be ~2
+    log("reconstructed full file (" .. #spec.new .. " lines):\n" .. table.concat(spec.new, "\n"))
+  else
+    log(
+      "diff body:\n"
+        .. (type(spec.diff) == "table" and table.concat(spec.diff, "\n") or tostring(spec.diff))
+    )
+  end
   cb({ accepted = true })
   accepted = true
   return 1
@@ -83,11 +90,17 @@ end
 vim.fn.jobstop(job)
 session.stop()
 
-log(("tapped=%s accepted=%s"):format(tostring(tapped), tostring(accepted)))
-if tapped and accepted then
+log(
+  ("tapped=%s accepted=%s full_file=%s"):format(
+    tostring(tapped),
+    tostring(accepted),
+    tostring(full_file)
+  )
+)
+if tapped and accepted and full_file then
   log("PASS")
   os.exit(0)
 else
-  log("FAIL: the live --remote client never produced a harnt diff")
+  log("FAIL: expected a harnt diff showing the reconstructed full file")
   os.exit(1)
 end
