@@ -12,7 +12,7 @@
 --- This is the codex-shaped equivalent of Claude's `openDiff` callback — obtained
 --- by proxying app-server rather than receiving a direct call. We never render the
 --- chat (the native TUI does), so it stays on-thesis with no feature loss. See
---- CODEX.md for the full reverse-engineering record and the exact wire.
+--- docs/CODEX.md for the full reverse-engineering record and the exact wire.
 ---
 --- All app-server protocol knowledge (method names, decision enums, payload
 --- shapes) lives in THIS file; the generic layers stay agent-agnostic.
@@ -190,7 +190,7 @@ end
 -- `getCurrentSelection`/`getOpenEditors`. Wire verified against codex-0.144.x
 -- (`tui/src/ide_context/ipc.rs`): editor = server, codex = client; codex sends
 -- `{type:"request", requestId, method:"ide-context", params:{workspaceRoot}}` and
--- reads `result.ideContext`. See CODEX.md.
+-- reads `result.ideContext`. See docs/CODEX.md.
 
 --- 4-byte little-endian length encoding.
 ---@param n integer

@@ -1,4 +1,4 @@
-# Dev shell for harnt.nvim — the Lua/Neovim plugin toolchain from TOOLS.md.
+# Dev shell for harnt.nvim — the Lua/Neovim plugin toolchain from docs/TOOLS.md.
 # The four-command agent/CI loop (stylua / selene / emmylua_check / busted) is
 # fully available here, plus the editor LSPs and a `just` task runner.
 {
@@ -18,7 +18,7 @@
           # Task runner — single source of truth for the pipeline (see ./justfile).
           pkgs.just
 
-          # Formatter + linter (TOOLS.md: StyLua, Selene)
+          # Formatter + linter (docs/TOOLS.md: StyLua, Selene)
           pkgs.stylua
           pkgs.selene
 
@@ -28,7 +28,7 @@
           pkgs.emmylua-ls
           pkgs.emmylua-doc-cli
 
-          # Fallback editor LSP (TOOLS.md: documented escape hatch).
+          # Fallback editor LSP (docs/TOOLS.md: documented escape hatch).
           pkgs.lua-language-server
 
           # Lua runtimes + packaging (luarocks canonical; lux optional dev ergonomics).

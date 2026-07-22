@@ -27,7 +27,7 @@ describe("connect envelope", function()
   end)
 
   it("decodes the REAL captured SubscribeToUnifiedStateSyncTopic frame", function()
-    -- Exact bytes the real language server sent (see ANTIGRAVITY.md capture):
+    -- Exact bytes the real language server sent (see docs/ANTIGRAVITY.md capture):
     -- flag 00, BE32 len 0x16 (22), then protobuf { field1 = "uss-agentPreferences" }.
     local body = from_hex("00000000160a147573732d6167656e74507265666572656e636573")
     local frame = connect.decode(body)

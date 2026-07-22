@@ -4,7 +4,7 @@
 --- any real CLI, so editor services, the event bus, and (later) frontends can be
 --- exercised end-to-end in headless CI. It streams whatever canned events a test
 --- drives into it, and records the responses it's given to server-initiated
---- requests. This is the deterministic seam TOOLS.md/PLAN call for.
+--- requests. This is the deterministic seam docs/TOOLS.md/PLAN call for.
 
 local events = require("harnt.events")
 local context = require("harnt.services.context")

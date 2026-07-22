@@ -11,13 +11,13 @@ in its own native TUI, each reaching back into the same editor layer:
 |---|---|---|
 | ![Claude Code diff review in harnt](./assets/claude.gif) | ![Codex diff review in harnt](./assets/codex.gif) | ![Antigravity diff review in harnt](./assets/antigravity.gif) |
 
-Each is recorded against the real CLI (`just demo`; see [`DEMO.md`](./DEMO.md)).
+Each is recorded against the real CLI (`just demo`; see [`DEMO.md`](./docs/DEMO.md)).
 
 **Status: beta.** Working end-to-end for **Claude Code**, **Codex**,
 **Antigravity (`agy`)**, and **OpenCode** — diffs, approvals, editor-context, a change-log, and one
 keymap set across all three, each verified against the real CLI. Pure Lua, no
-daemon. Not yet on luarocks (install from git — see below). See [`PLAN.md`](./PLAN.md)
-for the roadmap and [`BET.md`](./BET.md) for why this exists.
+daemon. Not yet on luarocks (install from git — see below). See [`PLAN.md`](./docs/PLAN.md)
+for the roadmap and [`BET.md`](./docs/BET.md) for why this exists.
 
 ---
 
@@ -46,7 +46,7 @@ the deep features in the process.
 - ✅ Pure Lua, in-process, on `vim.uv`. No mandatory Node/Bun runtime, no daemon.
 - ❌ **Not** a chat UI, and **not** a driver for headless-only agents (ACP /
   app-server as sole surface). Use an ACP client for those — see the non-goal in
-  [`PLAN.md`](./PLAN.md).
+  [`PLAN.md`](./docs/PLAN.md).
 
 ## Providers
 
@@ -62,7 +62,7 @@ the deep features in the process.
 Each agent is met in its *own* native protocol — there is deliberately no
 universal wire format (that's the whole bet). Adding an agent is a Lua table on
 the shared editor services; third parties can register one without a core PR.
-See [`PROVIDERS.md`](./PROVIDERS.md).
+See [`PROVIDERS.md`](./docs/PROVIDERS.md).
 
 ## Requirements
 
@@ -142,13 +142,76 @@ appears. The keys are the same for every agent.
 | `<leader>c` | comment on the current line |
 | `<leader>R` | submit review (reject + send comments as feedback) |
 
-All four are configurable:
+## Configuration
+
+Everything lives under `require("harnt").setup{}`. The full set of options and
+their defaults:
 
 ```lua
 require("harnt").setup({
-  keymaps = { diff = { accept = "<leader>a", reject = "<leader>r", comment = "<leader>c", review = "<leader>R" } },
-  -- diff = { presenter = fn },          -- swap the diff UI (default: side-by-side vimdiff)
-  -- approvals = { chooser = fn },       -- swap the approval prompt (default: vim.ui.select)
+  keymaps = {
+    diff = {                     -- buffer-local, active inside a diff/review window
+      accept  = "<leader>a",
+      reject  = "<leader>r",
+      comment = "<leader>c",     -- comment on the current line
+      review  = "<leader>R",     -- reject + send the comments back as feedback
+    },
+  },
+  diff = { presenter = nil },    -- how a proposed change is *shown* (see below)
+  approvals = { chooser = nil }, -- how an approval prompt is *shown* (see below)
+})
+```
+
+### Rendering diffs your own way
+
+harnt's diff **service** owns the change's lifecycle (baseline vs. proposal
+buffers, accept/reject, writing the result) and stays UI-agnostic; *how* it's
+laid out is a `presenter` you can replace. The default lays the two buffers out
+as a side-by-side vimdiff in a new tab, with a winbar showing the keys.
+
+A presenter is given the buffers the service already created and returns a
+`teardown` to dismiss whatever windows it opened:
+
+```lua
+require("harnt").setup({
+  diff = {
+    -- view = { path, original_buf, proposed_buf }
+    presenter = function(view)
+      -- e.g. a floating window instead of a tab:
+      local win = vim.api.nvim_open_win(view.proposed_buf, true, {
+        relative = "editor", width = 100, height = 30, row = 2, col = 4,
+        border = "rounded", title = " " .. vim.fn.fnamemodify(view.path, ":t") .. " ",
+      })
+      return { teardown = function() pcall(vim.api.nvim_win_close, win, true) end }
+    end,
+  },
+})
+```
+
+The keys (`accept`/`reject`/`comment`/`review`) are bound on those buffers by the
+service regardless of presenter, so a custom presenter never has to re-implement
+them. `view.original_buf` is absent for review-only diffs (an agent that applies
+its own edit and only wants a verdict), where `proposed_buf` is a rendered patch.
+
+### Rendering approvals your own way
+
+Command approvals go through a `chooser` (default: `vim.ui.select`, so it already
+follows whatever UI you've wired `vim.ui.select` to — `dressing.nvim`, `snacks`,
+`telescope`, …). Replace it for a fully custom prompt:
+
+```lua
+require("harnt").setup({
+  approvals = {
+    -- req = { key, prompt, detail? }
+    -- decision ∈ "allow_once" | "allow_always" | "deny_once" | "deny_always"
+    chooser = function(req, on_choice)
+      vim.ui.select({ "allow once", "allow always", "deny once", "deny always" }, {
+        prompt = req.prompt,
+      }, function(_, idx)
+        on_choice(({ "allow_once", "allow_always", "deny_once", "deny_always" })[idx or 1])
+      end)
+    end,
+  },
 })
 ```
 
@@ -172,7 +235,7 @@ require("harnt").setup({
   changes`; and `:Harnt send` pushes the current file/selection as a native
   `@`-mention. The TUI drives and renders; harnt observes. OpenCode also ships a
   headless `opencode acp` surface — the exact thing harnt refuses to render; we use
-  the native TUI + server instead. See [`OPENCODE.md`](./OPENCODE.md).
+  the native TUI + server instead. See [`OPENCODE.md`](./docs/OPENCODE.md).
 
 ## No feature loss (the guarantee)
 
@@ -188,7 +251,7 @@ untouched. Verified end-to-end per provider (`just e2e-*`):
 
 ## Extending
 
-Add an agent with a table — see [`PROVIDERS.md`](./PROVIDERS.md). The shared
+Add an agent with a table — see [`PROVIDERS.md`](./docs/PROVIDERS.md). The shared
 services (`context` / `diff` / `approvals` / `apply` / `changes`) are the reusable
 heart; a provider is mostly discovery + env + a tool/decision map on top.
 
@@ -205,7 +268,7 @@ just smoke             # clean-room load check (fresh install, nothing else on r
 just e2e-codex-ide     # real-CLI smoke (needs the agent authed); see the justfile
 ```
 
-Tooling decisions live in [`TOOLS.md`](./TOOLS.md).
+Tooling decisions live in [`TOOLS.md`](./docs/TOOLS.md).
 
 ## License
 

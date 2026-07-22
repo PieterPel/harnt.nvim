@@ -11,7 +11,7 @@
 --
 -- What it does NOT do: drive a turn. OpenCode's `serve` admits prompts but does
 -- not execute turns without a connected DRIVING client — the native TUI
--- (`opencode attach`) is the driver (see OPENCODE.md, "the load-bearing
+-- (`opencode attach`) is the driver (see docs/OPENCODE.md, "the load-bearing
 -- discovery"). So a live `permission.v2.asked` / `session.diff` only appears with
 -- the TUI attached; that hop is best eyeballed via `just try` + `:Harnt open
 -- opencode` and is the interactive part of the no-feature-loss check. This smoke proves the wire and

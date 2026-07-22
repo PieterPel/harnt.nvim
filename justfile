@@ -41,7 +41,7 @@ try:
     env -u LUA_PATH -u LUA_CPATH nvim -u {{ justfile_directory() }}/scripts/try-init.lua
 
 # Clean Neovim in a seeded temp project, staged for recording the README demo
-# (see DEMO.md for the storyboard). Needs an agent CLI authed to actually drive.
+# (see docs/DEMO.md for the storyboard). Needs an agent CLI authed to actually drive.
 demo:
     env -u LUA_PATH -u LUA_CPATH nvim -u {{ justfile_directory() }}/scripts/demo-init.lua
 
@@ -108,7 +108,7 @@ e2e-agy-mention:
 # Real-CLI e2e smoke vs OpenCode: spawns the real `opencode serve`, reaches it
 # over harnt's HTTP client, and taps its `/event` SSE stream. Verifies the wire +
 # transport against the real binary (turn-driving needs the attached TUI — see
-# OPENCODE.md). Needs `opencode` on PATH. NOT part of `ci`.
+# docs/OPENCODE.md). Needs `opencode` on PATH. NOT part of `ci`.
 e2e-opencode:
     env -u LUA_PATH -u LUA_CPATH nvim -l scripts/e2e-opencode.lua
 

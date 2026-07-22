@@ -7,7 +7,7 @@
 --- per coder/claudecode.nvim PROTOCOL.md.
 ---
 --- (Only Claude uses this surface. Codex is a different shape entirely — an
---- app-server proxy — see providers/codex.lua and CODEX.md.) Claude edits are
+--- app-server proxy — see providers/codex.lua and docs/CODEX.md.) Claude edits are
 --- recorded into the change-log via a PostToolUse hook in providers/claude.lua,
 --- not here — openDiff is a permission prompt, not an edit feed.
 

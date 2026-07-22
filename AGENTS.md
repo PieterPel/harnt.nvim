@@ -1,3 +1,3 @@
-@BET.md
-@TOOLS.md
-@PLAN.md
+@docs/BET.md
+@docs/TOOLS.md
+@docs/PLAN.md

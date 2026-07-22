@@ -7,7 +7,7 @@
 --- Events stream (`GET /event`) for diffs/approvals and POSTing replies back.
 ---
 --- Two shapes, both loopback-only and pure Lua on `vim.uv` (no curl, no runtime —
---- BET.md #4):
+--- docs/BET.md #4):
 ---  * `request` — a one-shot request; buffers the response (Content-Length or
 ---    chunked) and calls back once with `{status, body}`.
 ---  * `stream` — a long-lived GET whose `text/event-stream` body is parsed into

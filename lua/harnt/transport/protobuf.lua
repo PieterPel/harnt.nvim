@@ -18,7 +18,7 @@
 --- the Antigravity provider *only* — loaded from the exa `FileDescriptorSet`
 --- extracted from the language-server binary (`pb.load(descriptor)` then
 --- encode/decode by message name), kept an *optional* dependency so the core and
---- the Claude/Codex providers stay pure-Lua / zero-install (BET.md #4). The
+--- the Claude/Codex providers stay pure-Lua / zero-install (docs/BET.md #4). The
 --- Connect HTTP/framing layer stays ours either way; only the message codec swaps.
 
 local M = {}

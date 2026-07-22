@@ -1,7 +1,7 @@
 --- Antigravity provider — lifecycle-hook gate.
 ---
 --- The terminal `agy` CLI is standalone: it does NOT dial the exa language_server
---- (that server is the desktop IDE's Cascade sidebar; see ANTIGRAVITY.md for the
+--- (that server is the desktop IDE's Cascade sidebar; see docs/ANTIGRAVITY.md for the
 --- full reverse-engineering record and why the earlier LS/ExtensionServer path was
 --- the wrong integration point). What terminal agy *does* expose is a documented
 --- lifecycle-hook system (`.agents/hooks.json`, shipped with the CLI at

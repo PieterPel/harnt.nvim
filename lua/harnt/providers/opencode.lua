@@ -31,7 +31,7 @@
 ---
 --- All OpenCode protocol knowledge (event type names, permission decision enum,
 --- tool-input shapes, endpoint paths) lives in THIS file; the generic layers stay
---- agent-agnostic. See OPENCODE.md for the reverse-engineering record + the wire.
+--- agent-agnostic. See docs/OPENCODE.md for the reverse-engineering record + the wire.
 
 local approvals = require("harnt.services.approvals")
 local change_log = require("harnt.services.changes")
