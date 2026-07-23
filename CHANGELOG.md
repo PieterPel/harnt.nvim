@@ -1,0 +1,37 @@
+# Changelog
+
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
+follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it leaves
+`0.x`.
+
+## [Unreleased]
+
+### Added
+
+- Providers, each verified against the real CLI: **Claude Code** (WebSocket IDE
+  integration), **Codex** (`app-server` proxy behind `codex --remote`, plus the
+  `/ide` unix socket for editor context), **Antigravity** (`agy` lifecycle
+  hooks), and **OpenCode** (client of the agent's own HTTP server, `/event` SSE
+  tap).
+- Shared editor services written once and reused across every provider:
+  `context`, `diff` (file-level accept-with-edits / reject), `approvals`
+  (allow/deny, once/always), and `apply`.
+- A per-session change-log (`:Harnt changes`) of every file an agent touched.
+- `@`-mention / interactive send (`:Harnt send` → `on_mention`) across
+  providers.
+- One unified command + keymap surface (`:Harnt …`, buffer-local diff keys),
+  a statusline segment, and `:checkhealth harnt` per provider.
+- Provider registry so third parties can add an agent as a config table, plus
+  `HarntEvent` capability passthrough for provider-native payloads.
+- Pure-Lua transport primitives on `vim.uv` (jsonrpc, ws, mcp, stdio, filetail,
+  protobuf, http, httpclient) — no mandatory daemon or Node/Bun runtime.
+
+### Notes
+
+- Codex full-file diffs: single-file approvals reconstruct the whole
+  before/after by applying the unified diff against the on-disk file, so the
+  popup shows the full file focused on the change — consistent with the other
+  providers.
+
+[Unreleased]: https://codeberg.org/PieterPel/harnt.nvim/commits/branch/trunk

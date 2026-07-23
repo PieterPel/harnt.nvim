@@ -1,15 +1,15 @@
 --- Reverse-MCP provider base.
 ---
---- TODO: codex info is outdated here
+--- The shared machinery for the "editor as tool-server" shape: host a local
+--- server, advertise it via a discovery file with an auth token, speak MCP so
+--- the agent can call our editor tools, and expose a Session. A concrete
+--- provider layers a thin config table on top — transport, discovery format,
+--- and the editor tool set.
 ---
---- The shared machinery for every "editor as tool-server" agent (Claude, Codex
---- `/ide`, Gemini companion): host a local server, advertise it via a discovery
---- file with an auth token, speak MCP so the agent can call our editor tools,
---- and expose a Session. A concrete provider is a thin config table — transport,
---- discovery format, and the editor tool set — layered on top.
----
---- Only the WebSocket transport is wired here (Claude). The HTTP/SSE transport
---- (Codex/Gemini) plugs in at `config.transport` later without changing this.
+--- Only the WebSocket transport is wired here, which is what Claude Code's IDE
+--- integration speaks. The other agents reach the editor over different channel
+--- shapes and do not use this base: Codex proxies its `app-server`, Antigravity
+--- uses lifecycle hooks, and OpenCode is a client of the agent's own HTTP server.
 
 local events = require("harnt.events")
 local mcp = require("harnt.transport.mcp")
