@@ -4,6 +4,12 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+    # Neovim nightly — the second leg of the CI stable+nightly test matrix
+    # (docs/TOOLS.md: catch API drift early). Binaries come from the overlay's
+    # cachix, so CI downloads rather than builds; see .forgejo/workflows/ci.yml.
+    neovim-nightly-overlay.url = "github:nix-community/neovim-nightly-overlay";
+    neovim-nightly-overlay.inputs.nixpkgs.follows = "nixpkgs";
+
     # Git-hooks
     git-hooks-nix.url = "github:cachix/git-hooks.nix";
     treefmt-nix.url = "github:numtide/treefmt-nix";

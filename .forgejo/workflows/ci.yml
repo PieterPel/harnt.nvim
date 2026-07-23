@@ -7,7 +7,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [trunk]
   pull_request:
 
 jobs:
@@ -15,13 +15,24 @@ jobs:
     runs-on: docker
     container:
       image: nixos/nix:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Same gate against both Neovim legs (docs/TOOLS.md: catch API drift early).
+        # `default` = nixpkgs Neovim (latest stable); `nightly` = the nightly build.
+        nvim: [default, nightly]
     steps:
       - uses: actions/checkout@v4
 
       - name: Enable flakes
         run: |
           mkdir -p ~/.config/nix
-          echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+          {
+            echo "experimental-features = nix-command flakes"
+            # Pull the nightly Neovim from the overlay's cache instead of building it.
+            echo "extra-substituters = https://nix-community.cachix.org"
+            echo "extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+          } >> ~/.config/nix/nix.conf
 
-      - name: Run the pipeline
-        run: nix develop --command just ci
+      - name: Run the pipeline (Neovim ${{ matrix.nvim }})
+        run: nix develop ".#${{ matrix.nvim }}" --command just ci
