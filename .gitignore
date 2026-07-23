@@ -12,6 +12,9 @@ lua_modules/
 # Neovim helptags (generated from doc/*.txt)
 doc/tags
 
+# Demo recorder scratch output (frames captured by scripts/record-demo.sh)
+scratch_frames/
+
 # OS cruft
 .DS_Store
 
