@@ -15,18 +15,20 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
-    # `nightly` only runs after merge (push to trunk), not on every PR push: the
-    # nix-community cache regularly misses today's nightly-Neovim revision, which
-    # forces a from-source tree-sitter compile (~7-8 min) — too slow to pay on
-    # every PR push, and branch protection only requires `check (default)`
-    # anyway. `default` still runs everywhere so PRs get fast feedback.
-    if: matrix.nvim == 'default' || github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
         # Same gate against both Neovim legs (docs/TOOLS.md: catch API drift early).
         # `default` = nixpkgs Neovim (latest stable); `nightly` = the nightly build.
-        nvim: [default, nightly]
+        #
+        # `nightly` only runs after merge (push to trunk), not on every PR push:
+        # the nix-community cache regularly misses today's nightly-Neovim
+        # revision, forcing a from-source tree-sitter compile (~7-8 min) — too
+        # slow to pay on every PR push, and branch protection only requires
+        # `check (default)` anyway. (`matrix` isn't a valid context in a
+        # job-level `if:`, so the matrix list itself is computed per event
+        # instead.)
+        nvim: ${{ github.event_name == 'push' && fromJSON('["default", "nightly"]') || fromJSON('["default"]') }}
     steps:
       - uses: actions/checkout@v4
 
