@@ -63,6 +63,13 @@ gh api --method PATCH "repos/$REPO" \
 gh api --method PUT "repos/$REPO/vulnerability-alerts" -H "Accept: application/vnd.github+json"
 gh api --method PUT "repos/$REPO/private-vulnerability-reporting" -H "Accept: application/vnd.github+json"
 
+echo "==> Actions permissions"
+# release-please (and any other bot workflow) needs this to open its release PR.
+gh api --method PUT "repos/$REPO/actions/permissions/workflow" \
+  -f default_workflow_permissions=read \
+  -F can_approve_pull_request_reviews=true \
+  >/dev/null
+
 echo "==> Done. Current state:"
 gh api "repos/$REPO" --jq '.security_and_analysis'
 gh api "repos/$REPO/branches/$BRANCH/protection" --jq '{required_status_checks, enforce_admins: .enforce_admins.enabled, required_pull_request_reviews, allow_force_pushes: .allow_force_pushes.enabled, allow_deletions: .allow_deletions.enabled}'

@@ -7,6 +7,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it leaves
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-24
+
 ### Added
 
 - Providers, each verified against the real CLI: **Claude Code** (WebSocket IDE
@@ -34,4 +36,5 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it leaves
   popup shows the full file focused on the change — consistent with the other
   providers.
 
-[Unreleased]: https://github.com/PieterPel/harnt.nvim/commits/trunk
+[Unreleased]: https://github.com/PieterPel/harnt.nvim/compare/v0.1.0...trunk
+[0.1.0]: https://github.com/PieterPel/harnt.nvim/releases/tag/v0.1.0
