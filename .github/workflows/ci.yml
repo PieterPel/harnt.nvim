@@ -1,5 +1,10 @@
 # GitHub Actions CI. Runs the exact same gate as `just ci` locally, inside the
 # Nix dev shell so the toolchain is pinned by flake.lock.
+#
+# Nix runs on the host runner (not in a `container:`) — GitHub's job-container
+# support injects a Node runtime at /__e/nodeXX for actions like `checkout`, and
+# that injection breaks against the nixos/nix:latest image (missing/incompatible
+# libc), which fails every step before it even reaches `just ci`.
 name: ci
 
 on:
@@ -10,26 +15,30 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
-    container:
-      image: nixos/nix:latest
     strategy:
       fail-fast: false
       matrix:
         # Same gate against both Neovim legs (docs/TOOLS.md: catch API drift early).
         # `default` = nixpkgs Neovim (latest stable); `nightly` = the nightly build.
-        nvim: [default, nightly]
+        #
+        # `nightly` only runs after merge (push to trunk), not on every PR push:
+        # the nix-community cache regularly misses today's nightly-Neovim
+        # revision, forcing a from-source tree-sitter compile (~7-8 min) — too
+        # slow to pay on every PR push, and branch protection only requires
+        # `check (default)` anyway. (`matrix` isn't a valid context in a
+        # job-level `if:`, so the matrix list itself is computed per event
+        # instead.)
+        nvim: ${{ github.event_name == 'push' && fromJSON('["default", "nightly"]') || fromJSON('["default"]') }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Enable flakes
-        run: |
-          mkdir -p ~/.config/nix
-          {
-            echo "experimental-features = nix-command flakes"
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
             # Pull the nightly Neovim from the overlay's cache instead of building it.
-            echo "extra-substituters = https://nix-community.cachix.org"
-            echo "extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-          } >> ~/.config/nix/nix.conf
+            extra-substituters = https://nix-community.cachix.org
+            extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
 
       - name: Run the pipeline (Neovim ${{ matrix.nvim }})
         run: nix develop ".#${{ matrix.nvim }}" --command just ci

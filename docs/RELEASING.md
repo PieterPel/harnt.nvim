@@ -9,6 +9,9 @@ publishes on any `v*` tag; you can also publish by hand.
 1. Get a luarocks API key: luarocks.org → your account → **API keys**.
 2. Add it as a GitHub **repository secret** named `LUAROCKS_API_KEY`
    (Settings → Secrets and variables → Actions).
+3. Apply the repo's default policies (branch protection, security features,
+   merge/housekeeping, metadata): `just github-setup`. Idempotent — safe to
+   re-run any time settings drift. See `scripts/github-repo-setup.sh`.
 
 ## Before tagging
 
