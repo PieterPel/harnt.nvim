@@ -8,7 +8,7 @@ version = "0.1.0"
 
 [description]
 summary = "Drive any native-TUI coding agent in Neovim at full fidelity via reverse-MCP."
-homepage = "https://codeberg.org/PieterPel/harnt.nvim"
+homepage = "https://github.com/PieterPel/harnt.nvim"
 license = "MIT"
 
 [dependencies]

@@ -83,7 +83,7 @@ from git.
 ```lua
 {
   "harnt.nvim",
-  url = "https://codeberg.org/PieterPel/harnt.nvim",
+  url = "https://github.com/PieterPel/harnt.nvim",
   opts = {},
   -- optional: your own launch keymaps
   keys = {

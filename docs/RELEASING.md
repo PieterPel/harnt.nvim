@@ -1,14 +1,14 @@
 # RELEASING.md — cutting a release
 
-harnt publishes to [luarocks.org](https://luarocks.org). The Codeberg release
-workflow (`.forgejo/workflows/release.yml`) runs the full gate and publishes on
-any `v*` tag; you can also publish by hand.
+harnt publishes to [luarocks.org](https://luarocks.org). The GitHub Actions
+release workflow (`.github/workflows/release.yml`) runs the full gate and
+publishes on any `v*` tag; you can also publish by hand.
 
 ## One-time setup
 
 1. Get a luarocks API key: luarocks.org → your account → **API keys**.
-2. Add it as a Codeberg **repository secret** named `LUAROCKS_API_KEY`
-   (Settings → Actions → Secrets).
+2. Add it as a GitHub **repository secret** named `LUAROCKS_API_KEY`
+   (Settings → Secrets and variables → Actions).
 
 ## Before tagging
 
@@ -26,7 +26,7 @@ simplest path and works today:
 
 ```sh
 git tag v0.1.0
-git push origin v0.1.0        # CI runs `just ci` then `just publish`
+git push github v0.1.0        # CI runs `just ci` then `just publish`
 ```
 
 Manual equivalent (no CI):
@@ -44,7 +44,7 @@ resolves to that exact commit), add a versioned rockspec alongside the scm one:
 2. Set `version = "0.1.0-1"` and pin the source:
    ```lua
    source = {
-     url = "git+https://codeberg.org/PieterPel/harnt.nvim.git",
+     url = "git+https://github.com/PieterPel/harnt.nvim.git",
      tag = "v0.1.0",
    }
    ```

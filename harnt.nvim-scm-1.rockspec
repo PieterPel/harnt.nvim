@@ -3,7 +3,7 @@ package = "harnt.nvim"
 version = "scm-1"
 
 source = {
-  url = "git+https://codeberg.org/PieterPel/harnt.nvim.git",
+  url = "git+https://github.com/PieterPel/harnt.nvim.git",
 }
 
 description = {
@@ -14,7 +14,7 @@ description = {
     editor-context / diff / approvals / keymap layer. The agent keeps its own TUI;
     harnt never renders a chat UI, so no native feature is ever lost.
   ]],
-  homepage = "https://codeberg.org/PieterPel/harnt.nvim",
+  homepage = "https://github.com/PieterPel/harnt.nvim",
   license = "MIT",
   labels = { "neovim", "ai", "agents", "mcp" },
 }

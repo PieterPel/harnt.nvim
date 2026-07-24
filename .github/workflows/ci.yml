@@ -1,8 +1,5 @@
-# Codeberg CI (Forgejo Actions). Runs the exact same gate as `just ci` locally,
-# inside the Nix dev shell so the toolchain is pinned by flake.lock.
-#
-# Requires: repository Actions enabled in Codeberg settings, and a runner with
-# the `docker` label (Codeberg's shared runners provide this).
+# GitHub Actions CI. Runs the exact same gate as `just ci` locally, inside the
+# Nix dev shell so the toolchain is pinned by flake.lock.
 name: ci
 
 on:
@@ -12,7 +9,7 @@ on:
 
 jobs:
   check:
-    runs-on: docker
+    runs-on: ubuntu-latest
     container:
       image: nixos/nix:latest
     strategy:

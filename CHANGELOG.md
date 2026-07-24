@@ -34,4 +34,4 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it leaves
   popup shows the full file focused on the change — consistent with the other
   providers.
 
-[Unreleased]: https://codeberg.org/PieterPel/harnt.nvim/commits/branch/trunk
+[Unreleased]: https://github.com/PieterPel/harnt.nvim/commits/trunk
