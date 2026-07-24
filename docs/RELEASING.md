@@ -1,8 +1,12 @@
 # RELEASING.md — cutting a release
 
-harnt publishes to [luarocks.org](https://luarocks.org). The GitHub Actions
-release workflow (`.github/workflows/release.yml`) runs the full gate and
-publishes on any `v*` tag; you can also publish by hand.
+harnt publishes to [luarocks.org](https://luarocks.org). Releases are cut by
+**release-please** (`.github/workflows/release-please.yml`): it keeps a standing
+"chore(release): vX.Y.Z" PR up to date from Conventional Commits on `trunk`.
+Merging that PR tags the release and creates a GitHub Release, which triggers
+`.github/workflows/release.yml` to run the full gate and publish to
+luarocks.org. You never run `git tag` by hand — `v0.1.0` was the one manual
+exception, cut before release-please existed (see `CHANGELOG.md`).
 
 ## One-time setup
 
@@ -13,26 +17,22 @@ publishes on any `v*` tag; you can also publish by hand.
    merge/housekeeping, metadata): `just github-setup`. Idempotent — safe to
    re-run any time settings drift. See `scripts/github-repo-setup.sh`.
 
-## Before tagging
+## Before merging the release PR
 
 - [ ] `just ci` is green (fmt · lint · typecheck · test · smoke).
 - [ ] `luarocks lint harnt.nvim-scm-1.rockspec` passes.
 - [ ] README/`doc/harnt.txt` reflect the current commands, keymaps, providers.
 - [ ] (If you recorded it) the demo GIF is committed and linked in the README.
-- [ ] `CHANGELOG`/release notes drafted (optional but nice).
 
 ## Cut the release
 
-The current workflow publishes the **`scm`** (dev) rock — it tracks the git
-source, so `rocks.nvim` / luarocks users always get the latest. That's the
-simplest path and works today:
+Merge the open `chore(release): vX.Y.Z` PR that release-please maintains — it
+already contains the auto-generated changelog entry. Merging tags the release,
+which triggers `.github/workflows/release.yml` to run `just ci` then
+`just publish`, publishing the **`scm`** (dev) rock — it tracks the git source,
+so `rocks.nvim` / luarocks users always get the latest.
 
-```sh
-git tag v0.1.0
-git push github v0.1.0        # CI runs `just ci` then `just publish`
-```
-
-Manual equivalent (no CI):
+Manual equivalent (no CI, e.g. to re-publish without a new tag):
 
 ```sh
 LUAROCKS_API_KEY=… just publish
