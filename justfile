@@ -116,3 +116,9 @@ e2e-opencode:
 # but works locally too: `LUAROCKS_API_KEY=... just publish`.
 publish:
     luarocks upload harnt.nvim-scm-1.rockspec --api-key "${LUAROCKS_API_KEY}"
+
+# Apply sane default repo policies (branch protection, security features,
+# merge/housekeeping, metadata) to the GitHub mirror. Idempotent — safe to
+# re-run any time. Needs `gh` authenticated as an admin on the repo.
+github-setup repo="PieterPel/harnt.nvim":
+    bash {{ justfile_directory() }}/scripts/github-repo-setup.sh {{ repo }}
