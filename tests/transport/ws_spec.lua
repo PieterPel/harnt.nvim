@@ -115,6 +115,26 @@ describe("ws.connection", function()
     assert.is_truthy(state.writes[1]:find("s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", 1, true))
   end)
 
+  it("echoes an offered Sec-WebSocket-Protocol in the 101 response", function()
+    -- Claude Code sends `Sec-WebSocket-Protocol: mcp`; claude-code/2.1.220's WS
+    -- client tears the socket down right after the handshake if it isn't echoed.
+    local conn, state = make()
+    conn:feed(
+      "GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+        .. "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n"
+        .. "Sec-WebSocket-Protocol: mcp\r\n\r\n"
+    )
+    assert.is_true(state.opened)
+    assert.is_truthy(state.writes[1]:find("Sec%-WebSocket%-Protocol: mcp"))
+  end)
+
+  it("omits Sec-WebSocket-Protocol when the client offers none", function()
+    local conn, state = make()
+    conn:feed(HANDSHAKE) -- no Sec-WebSocket-Protocol header
+    assert.is_true(state.opened)
+    assert.is_nil(state.writes[1]:lower():find("sec%-websocket%-protocol"))
+  end)
+
   it("delivers a masked client message after the handshake", function()
     local conn, state = make()
     conn:feed(HANDSHAKE)

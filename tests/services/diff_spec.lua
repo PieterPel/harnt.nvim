@@ -36,6 +36,24 @@ describe("diff.open", function()
     diff.reject(id)
   end)
 
+  it("sets both buffers' filetype from the target path so syntax highlights", function()
+    local id = diff.open(
+      { path = "/tmp/y.lua", proposed = { "p" }, original = { "o" } },
+      function() end
+    )
+    assert(last_view, "presenter should have run")
+    assert.equals("lua", vim.bo[assert(last_view.original_buf)].filetype)
+    assert.equals("lua", vim.bo[last_view.proposed_buf].filetype)
+    diff.reject(id)
+  end)
+
+  it("leaves filetype empty when the path has no recognizable type", function()
+    local id = diff.open({ path = "/tmp/mystery_no_ext", proposed = { "x" } }, function() end)
+    assert(last_view, "presenter should have run")
+    assert.equals("", vim.bo[last_view.proposed_buf].filetype)
+    diff.reject(id)
+  end)
+
   it("hands the presenter both buffers and the path (presentation is injectable)", function()
     local id = diff.open(
       { path = "/tmp/y.lua", proposed = { "p" }, original = { "o" } },
