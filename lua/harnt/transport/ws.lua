@@ -268,7 +268,9 @@ function M.connection(opts)
       return false
     end
 
-    if opts.authenticate and not opts.authenticate(parse_headers(head)) then
+    local headers = parse_headers(head)
+
+    if opts.authenticate and not opts.authenticate(headers) then
       opts.on_write("HTTP/1.1 401 Unauthorized\r\n\r\n")
       conn._closed = true
       if opts.on_close then
@@ -277,14 +279,25 @@ function M.connection(opts)
       return false
     end
 
-    opts.on_write(table.concat({
+    -- Echo the client's offered subprotocol (Claude sends "mcp"). Some WS
+    -- client libraries treat an unacknowledged Sec-WebSocket-Protocol as a
+    -- negotiation failure and tear down the connection right after the
+    -- opening handshake, before ever speaking MCP — reproduced against
+    -- claude-code/2.1.220: the client closed the socket ~8ms after our 101
+    -- response, having sent no further bytes.
+    local response_lines = {
       "HTTP/1.1 101 Switching Protocols",
       "Upgrade: websocket",
       "Connection: Upgrade",
       "Sec-WebSocket-Accept: " .. M.accept_key(key),
-      "",
-      "",
-    }, "\r\n"))
+    }
+    if headers["sec-websocket-protocol"] then
+      table.insert(response_lines, "Sec-WebSocket-Protocol: " .. headers["sec-websocket-protocol"])
+    end
+    table.insert(response_lines, "")
+    table.insert(response_lines, "")
+
+    opts.on_write(table.concat(response_lines, "\r\n"))
     conn._upgraded = true
     if opts.on_open then
       opts.on_open()
