@@ -294,6 +294,14 @@ function M.open(spec, callback)
 
   local original_buf = scratch(spec.original or read_lines(spec.path))
   local proposed_buf = scratch(spec.proposed)
+
+  -- Scratch buffers created via the API skip filetype detection (no name, no
+  -- BufRead), so both panes render uncolored. Resolve the filetype from the
+  -- target path and set it on both so syntax/Tree-sitter highlights the diff.
+  local ft = vim.filetype.match({ filename = spec.path }) or ""
+  vim.bo[original_buf].filetype = ft
+  vim.bo[proposed_buf].filetype = ft
+
   local presentation = presenter({
     path = spec.path,
     original_buf = original_buf,
