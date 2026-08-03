@@ -1,0 +1,22 @@
+# Keeps a standing "chore(release): vX.Y.Z" PR up to date from Conventional
+# Commits on trunk (see release-please-config.json / .release-please-manifest.json).
+# Merging that PR tags the release and creates a GitHub Release, which triggers
+# release.yml to publish to luarocks.org. You never run `git tag` by hand again.
+#
+# Requires the repo setting "Allow GitHub Actions to create and approve pull
+# requests" (codified in scripts/github-repo-setup.sh).
+name: release-please
+
+on:
+  push:
+    branches: [trunk]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4

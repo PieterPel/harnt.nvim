@@ -5,7 +5,16 @@ All notable changes to this project are documented here. The format follows
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it leaves
 `0.x`.
 
+## [0.1.1](https://github.com/PieterPel/harnt.nvim/compare/v0.1.0...v0.1.1) (2026-08-02)
+
+
+### Bug Fixes
+
+* WebSocket subprotocol echo + diff-buffer syntax highlighting ([#3](https://github.com/PieterPel/harnt.nvim/issues/3)) ([cf695e6](https://github.com/PieterPel/harnt.nvim/commit/cf695e6680093df7692871ae5417a0c288834385))
+
 ## [Unreleased]
+
+## [0.1.0] - 2026-07-24
 
 ### Added
 
@@ -34,4 +43,5 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it leaves
   popup shows the full file focused on the change — consistent with the other
   providers.
 
-[Unreleased]: https://github.com/PieterPel/harnt.nvim/commits/trunk
+[Unreleased]: https://github.com/PieterPel/harnt.nvim/compare/v0.1.0...trunk
+[0.1.0]: https://github.com/PieterPel/harnt.nvim/releases/tag/v0.1.0
