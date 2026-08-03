@@ -12,7 +12,9 @@
 
     # Git-hooks
     git-hooks-nix.url = "github:cachix/git-hooks.nix";
+    git-hooks-nix.inputs.nixpkgs.follows = "nixpkgs";
     treefmt-nix.url = "github:numtide/treefmt-nix";
+    treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
 
     # Services
     process-compose-flake.url = "github:Platonic-Systems/process-compose-flake";
@@ -27,9 +29,11 @@
     # GitHub actions
     actions-nix.url = "github:nialov/actions.nix";
     actions-nix.inputs.git-hooks.follows = "git-hooks-nix";
+    actions-nix.inputs.nixpkgs.follows = "nixpkgs";
 
     # Generated files
     files.url = "github:mightyiam/files";
+    files.inputs.nixpkgs.follows = "nixpkgs";
 
     # Dagger
     dagger.url = "github:dagger/nix";
