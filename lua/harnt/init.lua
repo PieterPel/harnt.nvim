@@ -65,6 +65,7 @@ M.subcommands = {
   changes = function()
     require("harnt.services.changes").pick()
   end,
+  --- `:Harnt health` — run `:checkhealth harnt` for all registered providers.
   health = function()
     vim.cmd("checkhealth harnt")
   end,
