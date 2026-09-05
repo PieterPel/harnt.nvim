@@ -8,9 +8,10 @@
 --- It does NOT hardcode *how* the change is shown. Presentation is a frontend
 --- concern — a Shape A minimal popup, a floating window, a new tab, or a user
 --- preference — so the presenter is injectable (mirroring approvals' chooser).
---- The default lays the two buffers out as a side-by-side vimdiff. The proposal
---- buffer carries a buffer-local `harnt_diff` flag so auto-save plugins leave it
---- alone. Agent-agnostic.
+--- The built-in presenters (side-by-side vimdiff, a review-only patch view, an
+--- inline VSCode-style overlay) live in `services/diff/presenters.lua`. The
+--- proposal buffer carries a buffer-local `harnt_diff` flag so auto-save
+--- plugins leave it alone. Agent-agnostic.
 
 local apply = require("harnt.services.apply")
 
@@ -22,6 +23,10 @@ local ns = vim.api.nvim_create_namespace("harnt_diff_comments")
 --- Frontend hook invoked when the user submits a review (see M.set_review_handler).
 ---@type fun(id: integer)?
 local review_handler = nil
+
+--- Observer invoked right after a diff's presentation opens (see M.set_open_handler).
+---@type fun(id: integer)?
+local open_handler = nil
 
 ---@class harnt.diff.Spec
 ---@field path string absolute path the proposal targets
@@ -75,10 +80,14 @@ function M.set_keys(opts)
   keys.review = opts.review or keys.review
 end
 
---- The winbar affordance so a diff/review isn't a silent modal.
+--- The winbar affordance so a diff/review isn't a silent modal, and so it's
+--- obvious at a glance which file this diff targets — shown relative to
+--- $HOME then cwd (`:~:.`), matching `services/changes.lua`'s winbar.
+---@param path string
 ---@return string
-local function winbar_hint()
-  return ("  harnt diff   %s accept   %s reject   %s comment   %s review "):format(
+local function winbar_hint(path)
+  return ("  harnt diff · %s   %s accept   %s reject   %s comment   %s review "):format(
+    vim.fn.fnamemodify(path, ":~:."),
     keys.accept,
     keys.reject,
     keys.comment,
@@ -151,99 +160,42 @@ local function close_tab(tabpage)
   end
 end
 
---- Default presenter: side-by-side vimdiff in a new tabpage, with a winbar
---- affordance so it isn't a silent modal.
----@param view harnt.diff.View
----@return harnt.diff.Presentation
-local function default_presenter(view)
-  vim.cmd("tabnew")
-  local tabpage = vim.api.nvim_get_current_tabpage()
-
-  local left = vim.api.nvim_get_current_win()
-  local original_buf = assert(view.original_buf, "default_presenter needs an original_buf")
-  vim.api.nvim_win_set_buf(left, original_buf)
-  vim.api.nvim_win_call(left, function()
-    vim.cmd("diffthis")
-  end)
-
-  vim.cmd("vertical rightbelow split")
-  local right = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(right, view.proposed_buf)
-  vim.api.nvim_win_call(right, function()
-    vim.cmd("diffthis")
-  end)
-
-  local hint = winbar_hint()
-  vim.wo[left].winbar = hint
-  vim.wo[right].winbar = hint
-
-  bind_actions(original_buf)
-  bind_actions(view.proposed_buf)
-  bind_comment(view.proposed_buf)
-
-  return {
-    teardown = function()
-      close_tab(tabpage)
-    end,
-  }
-end
-
---- Review presenter: a single `filetype=diff` window in a new tabpage. Used for
---- pre-rendered patches (an agent that applies its own edits and only wants a
---- verdict), where there is no editable proposal buffer to lay out side by side.
----@param view harnt.diff.View
----@return harnt.diff.Presentation
-local function review_presenter(view)
-  vim.cmd("tabnew")
-  local tabpage = vim.api.nvim_get_current_tabpage()
-  local win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(win, view.proposed_buf)
-  vim.bo[view.proposed_buf].filetype = "diff"
-  vim.wo[win].winbar = winbar_hint()
-
-  -- Providers render full-file context, so the whole file is visible; start the
-  -- view focused on the first actual change (a `+`/`-` line, not a `@@`/`+++`/
-  -- `---` header) and center it.
-  local lines = vim.api.nvim_buf_get_lines(view.proposed_buf, 0, -1, false)
-  for i, l in ipairs(lines) do
-    local c = l:sub(1, 1)
-    if (c == "+" or c == "-") and l:sub(1, 3) ~= "+++" and l:sub(1, 3) ~= "---" then
-      pcall(vim.api.nvim_win_set_cursor, win, { i, 0 })
-      vim.api.nvim_win_call(win, function()
-        vim.cmd("normal! zz")
-      end)
-      break
-    end
-  end
-
-  bind_actions(view.proposed_buf)
-  bind_comment(view.proposed_buf)
-
-  return {
-    teardown = function()
-      close_tab(tabpage)
-    end,
-  }
-end
+--- Built-in presenters, for picking an alternative without writing your own:
+--- `presenters.split` (default, side-by-side vimdiff), `presenters.review`
+--- (single filetype=diff window, used for agent-applied review-only diffs),
+--- `presenters.inline` (single-buffer VSCode-style overlay), and
+--- `presenters.docked` (the same overlay, opened in the current tab so a
+--- layout plugin like edgy.nvim — or an already-open agent terminal — stays
+--- visible alongside it). Pass one to `M.set_presenter`/`M.set_review_presenter`,
+--- or set `diff = { style = "inline" }` (or `"docked"`) in
+--- `require("harnt").setup{}`. Built via `.new(hooks)`, not `require`d
+--- circularly, so `services/diff/presenters.lua` never depends back on this
+--- module (see that file's header).
+M.presenters = require("harnt.services.diff.presenters").new({
+  winbar_hint = winbar_hint,
+  bind_actions = bind_actions,
+  bind_comment = bind_comment,
+  close_tab = close_tab,
+})
 
 ---@type harnt.diff.Presenter
-local presenter = default_presenter
+local presenter = M.presenters.split
 
 ---@type harnt.diff.Presenter
-local review_presenter_fn = review_presenter
+local review_presenter_fn = M.presenters.review
 
 --- Swap the presentation (a provider frontend, a config choice, or a test's
 --- no-op). Pass nil to restore the default side-by-side vimdiff.
 ---@param fn harnt.diff.Presenter?
 function M.set_presenter(fn)
-  presenter = fn or default_presenter
+  presenter = fn or M.presenters.split
 end
 
 --- Swap the review-only presentation (single filetype=diff window). Pass nil to
 --- restore the default.
 ---@param fn harnt.diff.Presenter?
 function M.set_review_presenter(fn)
-  review_presenter_fn = fn or review_presenter
+  review_presenter_fn = fn or M.presenters.review
 end
 
 --- Read a file's lines, or {} if it does not exist / is unreadable.
@@ -317,6 +269,9 @@ function M.open(spec, callback)
     comments = {},
     origin = spec.origin,
   }
+  if open_handler then
+    open_handler(id)
+  end
   return id
 end
 
@@ -389,6 +344,9 @@ function M.open_review(spec, callback)
     review = true,
     origin = spec.origin,
   }
+  if open_handler then
+    open_handler(id)
+  end
   return id
 end
 
@@ -511,6 +469,16 @@ end
 ---@param fn fun(id: integer)?
 function M.set_review_handler(fn)
   review_handler = fn
+end
+
+--- Register an observer fired with `id` right after a diff's presentation
+--- opens (once `entries[id]` — and so `M.origin`/`M.target` — are already
+--- populated). Single-slot, like `M.set_review_handler`. Used by `manager.lua`
+--- to bind the "jump to agent" fallback keymap; the diff service itself stays
+--- agent-agnostic and never calls into it directly.
+---@param fn fun(id: integer)?
+function M.set_open_handler(fn)
+  open_handler = fn
 end
 
 --- Reject every open diff. Returns how many were closed.

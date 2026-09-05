@@ -262,3 +262,76 @@ describe("harnt.statusline", function()
     assert.is_truthy(harnt.statusline():find("headless"))
   end)
 end)
+
+describe("manager jump-to-agent fallback", function()
+  -- Only meaningful without edgy.nvim (see manager.lua's `has_edgy` guard) —
+  -- true in this dev shell, so the keymaps are expected to be bound.
+
+  --- Real (not the shared `fake_terminal` buf=0 placeholder) buffer + floating
+  --- window, so window-focus assertions below are meaningful.
+  local function real_terminal()
+    local buf = vim.api.nvim_create_buf(false, true)
+    local win = vim.api.nvim_open_win(buf, false, {
+      relative = "editor",
+      row = 0,
+      col = 0,
+      width = 10,
+      height = 5,
+    })
+    return { buf = buf, win = win, job = 0 }
+  end
+
+  --- The callback bound to `key` on `buf` (nil if nothing's bound there).
+  ---@param buf integer
+  ---@param key string
+  ---@return function?
+  local function mapping_callback(buf, key)
+    local maps = vim.api.nvim_buf_get_keymap(buf, "n")
+    for _, m in ipairs(maps) do
+      if m.lhs == key or m.lhs == vim.keycode(key) then
+        return m.callback
+      end
+    end
+    return nil
+  end
+
+  it("binds a key on the diff that focuses the agent, and back on the agent", function()
+    registry.register(make_provider("shapea", { cmd = { "agent" } }))
+    local term = real_terminal()
+    manager.launch("shapea", {
+      open_terminal = function()
+        return term
+      end,
+    })
+
+    local diff = require("harnt.services.diff")
+    diff.set_presenter(nil) -- the real side-by-side split, so the buffer has a window
+    local id = diff.open(
+      { path = "/tmp/x.lua", proposed = { "a" }, origin = "shapea" },
+      function() end
+    )
+    local diff_buf = diff.proposed_bufnr(id)
+    local diff_win = vim.fn.win_findbuf(diff_buf)[1]
+
+    local to_agent = mapping_callback(diff_buf, "<leader>t")
+    assert(to_agent, "expected a jump-to-agent mapping on the diff buffer")
+    to_agent()
+    assert.equals(term.win, vim.api.nvim_get_current_win())
+
+    local to_diff = mapping_callback(term.buf, "<leader>t")
+    assert(to_diff, "expected a jump-to-diff mapping on the terminal buffer")
+    to_diff()
+    assert.equals(diff_win, vim.api.nvim_get_current_win())
+
+    diff.reject(id)
+  end)
+
+  it("does not bind anything when the diff has no matching running instance", function()
+    local diff = require("harnt.services.diff")
+    diff.set_presenter(nil)
+    local id = diff.open({ path = "/tmp/y.lua", proposed = { "a" } }, function() end) -- no origin
+    local diff_buf = diff.proposed_bufnr(id)
+    assert.is_nil(mapping_callback(diff_buf, "<leader>t"))
+    diff.reject(id)
+  end)
+end)

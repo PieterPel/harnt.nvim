@@ -40,6 +40,12 @@ ci: fmt-check lint typecheck test smoke
 try:
     env -u LUA_PATH -u LUA_CPATH nvim -u {{ justfile_directory() }}/scripts/try-init.lua
 
+# Try a diff presenter with an already-open diff — no real agent CLI/auth
+# needed. `just try-diff` (default, side-by-side split) or `just try-diff
+# inline` (the VSCode-style overlay). See scripts/try-diff-init.lua.
+try-diff style="split":
+    env -u LUA_PATH -u LUA_CPATH HARNT_DIFF_STYLE={{ style }} nvim -u {{ justfile_directory() }}/scripts/try-diff-init.lua
+
 # Clean Neovim in a seeded temp project, staged for recording the README demo
 # (see docs/DEMO.md for the storyboard). Needs an agent CLI authed to actually drive.
 demo:

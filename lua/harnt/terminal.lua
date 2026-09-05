@@ -35,6 +35,12 @@ local builtin = {
     vim.cmd(opts.split or "botright vsplit")
     local win = vim.api.nvim_get_current_win()
     local buf = vim.api.nvim_create_buf(false, false)
+    -- A stable filetype (unset otherwise) so a layout plugin (e.g. edgy.nvim)
+    -- can dock this window by matching on it. Mirrors how snacks.terminal
+    -- tags its own terminal buffers `snacks_terminal` for the same reason —
+    -- when that opener is active, `snacks_terminal` is the one to match on
+    -- instead; overwriting it here would break existing snacks-wide setups.
+    vim.bo[buf].filetype = "harnt_terminal"
     vim.api.nvim_win_set_buf(win, buf)
 
     local on_exit = opts.on_exit
@@ -72,11 +78,18 @@ local function snacks_opener()
   end
   return {
     open = function(opts)
+      local win = { position = "right" }
+      -- snacks styles its windows off `NormalFloat`, which stays opaque even
+      -- when the colorscheme leaves `Normal` transparent (`bg == nil`). Clear
+      -- the override so the agent's terminal follows suit.
+      if vim.api.nvim_get_hl(0, { name = "Normal" }).bg == nil then
+        win.wo = { winhighlight = "" }
+      end
       local swin = snacks.terminal.open(opts.cmd, {
         env = opts.env,
         cwd = opts.cwd,
         interactive = true,
-        win = { position = "right" },
+        win = win,
       })
       if opts.on_exit then
         vim.api.nvim_create_autocmd("TermClose", {
