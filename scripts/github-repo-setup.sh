@@ -39,7 +39,7 @@ gh api --method PUT "repos/$REPO/branches/$BRANCH/protection" \
 {
   "required_status_checks": {
     "strict": true,
-    "contexts": ["check (default)"]
+    "contexts": ["check (default)", "pr-title"]
   },
   "enforce_admins": false,
   "required_pull_request_reviews": {
