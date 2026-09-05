@@ -60,8 +60,14 @@ local function render_inline_overlay(buf, original)
     local count_b = hunk[4] --[[@as integer]]
     if count_a > 0 then
       local removed = {}
+      -- `virt_lines` only paints its highlight across the given text, unlike
+      -- a real line's `line_hl_group` (which nvim fills to the window edge
+      -- via `hl_eol`) — pad well past any realistic window width so the
+      -- removed-line background reads with the same visual weight as added
+      -- lines instead of stopping dead at the end of the text.
+      local pad = string.rep(" ", 200)
       for i = start_a, start_a + count_a - 1 do
-        table.insert(removed, { { "  " .. (original[i] or ""), "HarntInlineDelete" } })
+        table.insert(removed, { { "  " .. (original[i] or "") .. pad, "HarntInlineDelete" } })
       end
       -- Anchor the removed-lines overlay where the gap actually is: above the
       -- new hunk's first line when something replaced it, else below the
