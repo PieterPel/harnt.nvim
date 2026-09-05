@@ -8,6 +8,7 @@ local M = {}
 
 ---@class harnt.DiffConfig
 ---@field presenter? harnt.diff.Presenter how proposed changes are shown
+---@field style? "split"|"inline" pick a built-in presenter by name (default "split"); ignored if `presenter` is also set
 
 ---@class harnt.ApprovalsConfig
 ---@field chooser? harnt.approvals.Chooser how approval prompts are shown
@@ -47,6 +48,14 @@ function M.setup(opts)
       "harnt.setup: diff.presenter must be a function"
     )
     require("harnt.services.diff").set_presenter(merged.diff.presenter)
+  elseif merged.diff.style ~= nil then
+    local diff = require("harnt.services.diff")
+    local chosen = diff.presenters[merged.diff.style]
+    -- emmylua sees `table<string, Presenter>` indexing as always non-nil; an
+    -- unknown style name is exactly the runtime case this guards against.
+    ---@diagnostic disable-next-line: unnecessary-assert
+    assert(chosen, "harnt.setup: unknown diff.style " .. tostring(merged.diff.style))
+    diff.set_presenter(chosen)
   end
 
   if merged.approvals.chooser ~= nil then

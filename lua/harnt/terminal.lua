@@ -72,11 +72,18 @@ local function snacks_opener()
   end
   return {
     open = function(opts)
+      local win = { position = "right" }
+      -- snacks styles its windows off `NormalFloat`, which stays opaque even
+      -- when the colorscheme leaves `Normal` transparent (`bg == nil`). Clear
+      -- the override so the agent's terminal follows suit.
+      if vim.api.nvim_get_hl(0, { name = "Normal" }).bg == nil then
+        win.wo = { winhighlight = "" }
+      end
       local swin = snacks.terminal.open(opts.cmd, {
         env = opts.env,
         cwd = opts.cwd,
         interactive = true,
-        win = { position = "right" },
+        win = win,
       })
       if opts.on_exit then
         vim.api.nvim_create_autocmd("TermClose", {

@@ -61,6 +61,41 @@ describe("config.setup", function()
     end)
   end)
 
+  it("wires a diff.style into the diff service as the active presenter", function()
+    config.setup({ diff = { style = "inline" } })
+    local id = diff.open(
+      { path = "/tmp/x.lua", proposed = { "a" }, original = { "a" } },
+      function() end
+    )
+    local pbuf = diff.proposed_bufnr(id)
+    assert(pbuf)
+    -- the inline presenter puts the proposal in the (only) window of a new tab
+    assert.equals(pbuf, vim.api.nvim_win_get_buf(vim.fn.win_findbuf(pbuf)[1]))
+    diff.reject(id)
+  end)
+
+  it("diff.presenter takes precedence over diff.style when both are set", function()
+    local used = false
+    config.setup({
+      diff = {
+        style = "inline",
+        presenter = function()
+          used = true
+          return { teardown = function() end }
+        end,
+      },
+    })
+    local id = diff.open({ path = "/tmp/x", proposed = { "a" } }, function() end)
+    assert.is_true(used)
+    diff.reject(id)
+  end)
+
+  it("rejects an unknown diff.style", function()
+    assert.has_error(function()
+      config.setup({ diff = { style = "nonexistent" } })
+    end)
+  end)
+
   it("wires diff keymaps into the diff service", function()
     config.setup({ keymaps = { diff = { accept = "gA", reject = "gR" } } })
     diff.set_presenter(nil)

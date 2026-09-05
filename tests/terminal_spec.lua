@@ -81,3 +81,50 @@ describe("terminal opener seam", function()
     assert.is_function(terminal.builtin.close)
   end)
 end)
+
+describe("snacks opener transparency", function()
+  local orig_snacks
+
+  before_each(function()
+    orig_snacks = package.loaded["snacks"]
+  end)
+
+  after_each(function()
+    package.loaded["snacks"] = orig_snacks
+    terminal.set_opener(nil)
+    vim.api.nvim_set_hl(0, "Normal", {})
+  end)
+
+  local function fake_snacks(capture)
+    return {
+      terminal = {
+        open = function(_cmd, opts)
+          capture.win = opts.win
+          return { buf = vim.api.nvim_create_buf(false, true), win = vim.api.nvim_get_current_win() }
+        end,
+      },
+    }
+  end
+
+  it("clears winhighlight when Normal has no background", function()
+    vim.api.nvim_set_hl(0, "Normal", { bg = nil })
+    local capture = {}
+    package.loaded["snacks"] = fake_snacks(capture)
+    terminal.set_opener(nil)
+
+    terminal.open({ cmd = { "cat" } })
+
+    assert.equals("", capture.win.wo.winhighlight)
+  end)
+
+  it("leaves snacks' default styling alone when Normal has a background", function()
+    vim.api.nvim_set_hl(0, "Normal", { bg = "#1e1e2e" })
+    local capture = {}
+    package.loaded["snacks"] = fake_snacks(capture)
+    terminal.set_opener(nil)
+
+    terminal.open({ cmd = { "cat" } })
+
+    assert.is_nil(capture.win.wo)
+  end)
+end)
