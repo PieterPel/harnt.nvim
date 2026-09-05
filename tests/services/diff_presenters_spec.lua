@@ -115,6 +115,41 @@ describe("diff.presenters.docked", function()
     assert.equals(baseline_tab, vim.fn.tabpagenr("$"))
   end)
 
+  it(
+    "does not evict an existing right-docked window (e.g. the terminal) from the tab's edge",
+    function()
+      -- Regression test: the docked presenter used to open via
+      -- `vertical botright split`, which — like terminal.lua's own
+      -- `botright vsplit` — always claims the tabpage's absolute right edge.
+      -- Whichever opened last would evict the other from that slot, so an
+      -- already-open terminal would visibly get shoved left when a docked
+      -- diff opened. Reproduce that layout (terminal at the true right edge,
+      -- focus back on the "main" window, as it would be while reviewing a
+      -- file) and assert the terminal stays the rightmost window.
+      vim.cmd("botright vsplit")
+      local term_win = vim.api.nvim_get_current_win()
+      vim.cmd("wincmd h")
+
+      diff.set_presenter(diff.presenters.docked)
+      local id = diff.open(
+        { path = "/tmp/z.lua", proposed = { "a" }, original = { "a" } },
+        function() end
+      )
+
+      local rightmost, max_col = nil, -1
+      for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        local col = vim.fn.win_screenpos(w)[2]
+        if col > max_col then
+          max_col, rightmost = col, w
+        end
+      end
+      assert.equals(term_win, rightmost)
+
+      diff.reject(id)
+      pcall(vim.api.nvim_win_close, term_win, true)
+    end
+  )
+
   it("renders the same inline overlay as the inline presenter", function()
     diff.set_presenter(diff.presenters.docked)
     local id = diff.open({

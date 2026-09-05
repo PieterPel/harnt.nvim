@@ -226,6 +226,14 @@ function M.new(hooks)
   --- there (or anything else) stays visible alongside it. Opt in via
   --- `diff = { style = "docked" }`.
   ---
+  --- Splits the CURRENT window (`rightbelow vsplit`) — deliberately NOT the
+  --- outermost edge of the tabpage (`vertical botright split`, the first
+  --- attempt here). The terminal opener already claims the tab's absolute
+  --- right edge the same way (`terminal.lua`: `botright vsplit`); an
+  --- edge-claiming split here would fight it for that exact slot and evict
+  --- whichever one opened first — the diff would land where the terminal
+  --- was and push the terminal left, instead of splitting in next to it.
+  ---
   --- A layout plugin needs one stable filetype to dock a window on (see
   --- edgy.nvim's README: it buckets windows by exact `&filetype`), which rules
   --- out the target file's real filetype here (it varies per diff). So this
@@ -238,7 +246,7 @@ function M.new(hooks)
   ---@param view harnt.diff.View
   ---@return harnt.diff.Presentation
   local function docked_presenter(view)
-    vim.cmd("vertical botright split")
+    vim.cmd("rightbelow vsplit")
     local win = vim.api.nvim_get_current_win()
 
     local real_ft = vim.bo[view.proposed_buf].filetype
