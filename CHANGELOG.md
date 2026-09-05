@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format follows
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it leaves
 `0.x`.
 
+## [0.2.0](https://github.com/PieterPel/harnt.nvim/compare/v0.1.1...v0.2.0) (2026-09-05)
+
+
+### Features
+
+* add just try-edgy harness for testing edgy.nvim docking ([#7](https://github.com/PieterPel/harnt.nvim/issues/7)) ([e9e185e](https://github.com/PieterPel/harnt.nvim/commit/e9e185ecaeee8685f2278d0f041496246f8fd030))
+
 ## [0.1.1](https://github.com/PieterPel/harnt.nvim/compare/v0.1.0...v0.1.1) (2026-08-02)
 
 
