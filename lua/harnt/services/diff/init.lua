@@ -24,6 +24,10 @@ local ns = vim.api.nvim_create_namespace("harnt_diff_comments")
 ---@type fun(id: integer)?
 local review_handler = nil
 
+--- Observer invoked right after a diff's presentation opens (see M.set_open_handler).
+---@type fun(id: integer)?
+local open_handler = nil
+
 ---@class harnt.diff.Spec
 ---@field path string absolute path the proposal targets
 ---@field proposed string[] proposed new content
@@ -76,10 +80,14 @@ function M.set_keys(opts)
   keys.review = opts.review or keys.review
 end
 
---- The winbar affordance so a diff/review isn't a silent modal.
+--- The winbar affordance so a diff/review isn't a silent modal, and so it's
+--- obvious at a glance which file this diff targets — shown relative to
+--- $HOME then cwd (`:~:.`), matching `services/changes.lua`'s winbar.
+---@param path string
 ---@return string
-local function winbar_hint()
-  return ("  harnt diff   %s accept   %s reject   %s comment   %s review "):format(
+local function winbar_hint(path)
+  return ("  harnt diff · %s   %s accept   %s reject   %s comment   %s review "):format(
+    vim.fn.fnamemodify(path, ":~:."),
     keys.accept,
     keys.reject,
     keys.comment,
@@ -155,9 +163,12 @@ end
 --- Built-in presenters, for picking an alternative without writing your own:
 --- `presenters.split` (default, side-by-side vimdiff), `presenters.review`
 --- (single filetype=diff window, used for agent-applied review-only diffs),
---- and `presenters.inline` (single-buffer VSCode-style overlay). Pass one to
---- `M.set_presenter`/`M.set_review_presenter`, or set `diff = { style = "inline" }`
---- in `require("harnt").setup{}`. Built via `.new(hooks)`, not `require`d
+--- `presenters.inline` (single-buffer VSCode-style overlay), and
+--- `presenters.docked` (the same overlay, opened in the current tab so a
+--- layout plugin like edgy.nvim — or an already-open agent terminal — stays
+--- visible alongside it). Pass one to `M.set_presenter`/`M.set_review_presenter`,
+--- or set `diff = { style = "inline" }` (or `"docked"`) in
+--- `require("harnt").setup{}`. Built via `.new(hooks)`, not `require`d
 --- circularly, so `services/diff/presenters.lua` never depends back on this
 --- module (see that file's header).
 M.presenters = require("harnt.services.diff.presenters").new({
@@ -258,6 +269,9 @@ function M.open(spec, callback)
     comments = {},
     origin = spec.origin,
   }
+  if open_handler then
+    open_handler(id)
+  end
   return id
 end
 
@@ -330,6 +344,9 @@ function M.open_review(spec, callback)
     review = true,
     origin = spec.origin,
   }
+  if open_handler then
+    open_handler(id)
+  end
   return id
 end
 
@@ -452,6 +469,16 @@ end
 ---@param fn fun(id: integer)?
 function M.set_review_handler(fn)
   review_handler = fn
+end
+
+--- Register an observer fired with `id` right after a diff's presentation
+--- opens (once `entries[id]` — and so `M.origin`/`M.target` — are already
+--- populated). Single-slot, like `M.set_review_handler`. Used by `manager.lua`
+--- to bind the "jump to agent" fallback keymap; the diff service itself stays
+--- agent-agnostic and never calls into it directly.
+---@param fn fun(id: integer)?
+function M.set_open_handler(fn)
+  open_handler = fn
 end
 
 --- Reject every open diff. Returns how many were closed.

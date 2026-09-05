@@ -12,7 +12,7 @@
 local M = {}
 
 ---@class harnt.diff.PresenterHooks
----@field winbar_hint fun(): string
+---@field winbar_hint fun(path: string): string
 ---@field bind_actions fun(buf: integer)
 ---@field bind_comment fun(buf: integer)
 ---@field close_tab fun(tabpage: integer)
@@ -94,6 +94,16 @@ local function render_inline_overlay(buf, original)
   end
 end
 
+--- Resolve `ft` to the Tree-sitter parser language that highlights it, falling
+--- back to `ft` itself (most filetypes and parser names match; this only
+--- matters for the handful that don't, e.g. `javascriptreact` → `javascript`).
+---@param ft string
+---@return string
+local function ts_lang(ft)
+  local ok, lang = pcall(vim.treesitter.language.get_lang, ft)
+  return (ok and lang) or ft
+end
+
 --- Build the built-in presenters, wired to the diff service's shared hooks.
 ---@param hooks harnt.diff.PresenterHooks
 ---@return table<string, harnt.diff.Presenter>
@@ -120,7 +130,7 @@ function M.new(hooks)
       vim.cmd("diffthis")
     end)
 
-    local hint = hooks.winbar_hint()
+    local hint = hooks.winbar_hint(view.path)
     vim.wo[left].winbar = hint
     vim.wo[right].winbar = hint
 
@@ -147,7 +157,7 @@ function M.new(hooks)
     local win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(win, view.proposed_buf)
     vim.bo[view.proposed_buf].filetype = "diff"
-    vim.wo[win].winbar = hooks.winbar_hint()
+    vim.wo[win].winbar = hooks.winbar_hint(view.path)
 
     -- Providers render full-file context, so the whole file is visible; start
     -- the view focused on the first actual change (a `+`/`-` line, not a
@@ -174,6 +184,23 @@ function M.new(hooks)
     }
   end
 
+  --- Render the inline overlay into `win` (already showing `view.proposed_buf`)
+  --- and wire up the shared winbar/keymaps. Shared by `inline` (own tab) and
+  --- `docked` (split in the current tab) — they differ only in *where* the
+  --- window comes from and how it's torn down.
+  ---@param win integer
+  ---@param view harnt.diff.View
+  local function render_inline(win, view)
+    vim.api.nvim_win_set_buf(win, view.proposed_buf)
+    vim.wo[win].winbar = hooks.winbar_hint(view.path)
+
+    local original_buf = assert(view.original_buf, "inline presenter needs an original_buf")
+    render_inline_overlay(view.proposed_buf, vim.api.nvim_buf_get_lines(original_buf, 0, -1, false))
+
+    hooks.bind_actions(view.proposed_buf)
+    hooks.bind_comment(view.proposed_buf)
+  end
+
   --- Inline presenter: a single editable window (VSCode "inline diff" style)
   --- instead of the default side-by-side split. Opt in via
   --- `diff = { presenter = require("harnt.services.diff").presenters.inline }`
@@ -185,15 +212,7 @@ function M.new(hooks)
   local function inline_presenter(view)
     vim.cmd("tabnew")
     local tabpage = vim.api.nvim_get_current_tabpage()
-    local win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(win, view.proposed_buf)
-    vim.wo[win].winbar = hooks.winbar_hint()
-
-    local original_buf = assert(view.original_buf, "inline presenter needs an original_buf")
-    render_inline_overlay(view.proposed_buf, vim.api.nvim_buf_get_lines(original_buf, 0, -1, false))
-
-    hooks.bind_actions(view.proposed_buf)
-    hooks.bind_comment(view.proposed_buf)
+    render_inline(vim.api.nvim_get_current_win(), view)
 
     return {
       teardown = function()
@@ -202,10 +221,47 @@ function M.new(hooks)
     }
   end
 
+  --- Docked presenter: the same inline overlay, but opened as a split in the
+  --- CURRENT tabpage instead of a new one — so an agent terminal already open
+  --- there (or anything else) stays visible alongside it. Opt in via
+  --- `diff = { style = "docked" }`.
+  ---
+  --- A layout plugin needs one stable filetype to dock a window on (see
+  --- edgy.nvim's README: it buckets windows by exact `&filetype`), which rules
+  --- out the target file's real filetype here (it varies per diff). So this
+  --- buffer's filetype is fixed to `harnt_diff` — dockable the same way the
+  --- terminal's `harnt_terminal`/`snacks_terminal` is — and syntax
+  --- highlighting is restored independently via an explicit Tree-sitter
+  --- attach (`vim.treesitter.start`, which doesn't care what `&filetype`
+  --- says). If no parser is installed for the target language, the buffer is
+  --- still fully usable — just without highlighting.
+  ---@param view harnt.diff.View
+  ---@return harnt.diff.Presentation
+  local function docked_presenter(view)
+    vim.cmd("vertical botright split")
+    local win = vim.api.nvim_get_current_win()
+
+    local real_ft = vim.bo[view.proposed_buf].filetype
+    render_inline(win, view)
+    vim.bo[view.proposed_buf].filetype = "harnt_diff"
+    if real_ft ~= "" then
+      pcall(vim.treesitter.start, view.proposed_buf, ts_lang(real_ft))
+    end
+
+    return {
+      teardown = function()
+        if vim.api.nvim_win_is_valid(win) then
+          pcall(vim.api.nvim_win_close, win, true)
+        end
+      end,
+    }
+  end
+
   return {
     split = split_presenter,
     review = review_presenter,
     inline = inline_presenter,
+    docked = docked_presenter,
   }
 end
 

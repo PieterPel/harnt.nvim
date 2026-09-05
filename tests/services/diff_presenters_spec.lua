@@ -13,10 +13,11 @@ after_each(function()
 end)
 
 describe("diff.presenters", function()
-  it("exposes the built-in split/review/inline presenters", function()
+  it("exposes the built-in split/review/inline/docked presenters", function()
     assert.is_function(diff.presenters.split)
     assert.is_function(diff.presenters.review)
     assert.is_function(diff.presenters.inline)
+    assert.is_function(diff.presenters.docked)
   end)
 end)
 
@@ -90,5 +91,70 @@ describe("HarntInline highlight defaults", function()
   it("links to the standard Diff* groups by default", function()
     assert.equals("DiffAdd", vim.api.nvim_get_hl(0, { name = "HarntInlineAdd" }).link)
     assert.equals("DiffDelete", vim.api.nvim_get_hl(0, { name = "HarntInlineDelete" }).link)
+  end)
+end)
+
+describe("diff.presenters.docked", function()
+  it("opens a split in the CURRENT tab instead of a new one", function()
+    diff.set_presenter(diff.presenters.docked)
+    local baseline_tab = vim.fn.tabpagenr("$")
+    local baseline_win = vim.api.nvim_get_current_win()
+    local id = diff.open(
+      { path = "/tmp/z.lua", proposed = { "a" }, original = { "a" } },
+      function() end
+    )
+    assert.equals(baseline_tab, vim.fn.tabpagenr("$")) -- no new tab
+
+    local pbuf = diff.proposed_bufnr(id)
+    assert(pbuf)
+    local wins = vim.fn.win_findbuf(pbuf)
+    assert.equals(1, #wins)
+    assert.are_not.equals(baseline_win, wins[1]) -- a real split, not reused
+
+    diff.reject(id)
+    assert.equals(baseline_tab, vim.fn.tabpagenr("$"))
+  end)
+
+  it("renders the same inline overlay as the inline presenter", function()
+    diff.set_presenter(diff.presenters.docked)
+    local id = diff.open({
+      path = "/tmp/z.lua",
+      proposed = { "one", "TWO" },
+      original = { "one", "two" },
+    }, function() end)
+    local pbuf = diff.proposed_bufnr(id)
+    assert(pbuf)
+    local marks = vim.api.nvim_buf_get_extmarks(pbuf, inline_ns, 0, -1, { details = true })
+    assert.equals(2, #marks) -- same overlay logic as `inline` (removed + changed)
+    diff.reject(id)
+  end)
+
+  it("swaps the buffer's filetype to harnt_diff (edgy match key) after rendering", function()
+    diff.set_presenter(diff.presenters.docked)
+    local id = diff.open(
+      { path = "/tmp/z.lua", proposed = { "a" }, original = { "a" } },
+      function() end
+    )
+    local pbuf = diff.proposed_bufnr(id)
+    assert(pbuf)
+    assert.equals("harnt_diff", vim.bo[pbuf].filetype)
+    diff.reject(id)
+  end)
+
+  it("closes only its own window, not the whole tab, on teardown", function()
+    vim.cmd("tabnew") -- an unrelated extra window in the same tab
+    local sibling_win = vim.api.nvim_get_current_win()
+    local tab = vim.fn.tabpagenr("$")
+
+    diff.set_presenter(diff.presenters.docked)
+    local id = diff.open(
+      { path = "/tmp/z.lua", proposed = { "a" }, original = { "a" } },
+      function() end
+    )
+    diff.reject(id)
+
+    assert.equals(tab, vim.fn.tabpagenr("$")) -- tab still open
+    assert.is_true(vim.api.nvim_win_is_valid(sibling_win)) -- sibling untouched
+    vim.cmd("tabclose")
   end)
 end)

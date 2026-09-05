@@ -15,6 +15,12 @@ describe("terminal.open", function()
     terminal.close(handle)
   end)
 
+  it("tags the buffer harnt_terminal, for layout plugins like edgy.nvim to dock", function()
+    local handle = terminal.open({ cmd = { "cat" } })
+    assert.equals("harnt_terminal", vim.bo[handle.buf].filetype)
+    terminal.close(handle)
+  end)
+
   it("fires on_exit with the exit code", function()
     local code
     terminal.open({

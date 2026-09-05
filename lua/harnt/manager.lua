@@ -8,6 +8,7 @@
 
 local registry = require("harnt.providers")
 local terminal = require("harnt.terminal")
+local diff = require("harnt.services.diff")
 
 local M = {}
 
@@ -19,6 +20,64 @@ local M = {}
 
 ---@type table<string, harnt.manager.Instance?>
 local instances = {}
+
+-- With edgy.nvim (or similar) installed and configured, the user docks the
+-- agent terminal + a `diff = { style = "docked" }` diff to real screen edges
+-- and normal window navigation covers switching between them — a redundant
+-- jump keymap would just be one more thing to unbind. Without it, the two
+-- still live in separate tabs/splits with no way to hop between them beyond
+-- `gt`/`<C-w>`, so the fallback keymap below (jump_key) is bound instead.
+local has_edgy = pcall(require, "edgy")
+
+--- The key that jumps between a diff and the agent that opened it (see
+--- `diff.set_open_handler` below). Only takes effect when edgy isn't detected.
+local jump_key = "<leader>t"
+
+--- Override the jump key (wired from user config).
+---@param key string
+function M.set_jump_key(key)
+  jump_key = key
+end
+
+-- Bind the fallback "jump to agent" / "jump to diff" keymaps for every diff
+-- that opens, unless edgy is managing the layout instead. Registered once,
+-- here, rather than in `services/diff` — the diff service stays agent-
+-- agnostic and never learns about providers/terminals.
+diff.set_open_handler(function(id)
+  if has_edgy then
+    return
+  end
+  local buf = diff.proposed_bufnr(id)
+  if not buf then
+    return
+  end
+  local origin = diff.origin(id)
+  local instance = origin and instances[origin]
+  local term_buf = instance and instance.terminal and instance.terminal.buf
+  if not term_buf then
+    return
+  end
+
+  local opts = { nowait = true, silent = true }
+  vim.keymap.set("n", jump_key, function()
+    local term_win = vim.fn.win_findbuf(term_buf)[1]
+    if not term_win then
+      -- `term_buf` truthy above implies `instance` (and so `origin`) was too.
+      M.toggle(origin --[[@as string]]) -- the terminal's hidden — re-show it
+      term_win = vim.fn.win_findbuf(term_buf)[1]
+    end
+    if term_win then
+      vim.api.nvim_set_current_win(term_win) -- switches tabpage too, if needed
+    end
+  end, vim.tbl_extend("force", opts, { buffer = buf, desc = "harnt: jump to agent" }))
+
+  vim.keymap.set("n", jump_key, function()
+    local diff_win = vim.fn.win_findbuf(buf)[1]
+    if diff_win then
+      vim.api.nvim_set_current_win(diff_win)
+    end
+  end, vim.tbl_extend("force", opts, { buffer = term_buf, desc = "harnt: jump to diff" }))
+end)
 
 ---@class harnt.manager.LaunchOpts
 ---@field ctx? harnt.SessionContext
@@ -142,7 +201,6 @@ end
 --- it's a plain reject.
 ---@param id integer
 function M.review(id)
-  local diff = require("harnt.services.diff")
   local reject = function()
     diff.reject(id)
   end

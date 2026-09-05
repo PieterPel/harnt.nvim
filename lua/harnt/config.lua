@@ -8,13 +8,14 @@ local M = {}
 
 ---@class harnt.DiffConfig
 ---@field presenter? harnt.diff.Presenter how proposed changes are shown
----@field style? "split"|"inline" pick a built-in presenter by name (default "split"); ignored if `presenter` is also set
+---@field style? "split"|"inline"|"docked" pick a built-in presenter by name (default "split"); ignored if `presenter` is also set. "docked" opens in the current tab instead of a new one — pair with a layout plugin (e.g. edgy.nvim, matching filetype "harnt_diff") or the automatic jump_agent fallback below
 
 ---@class harnt.ApprovalsConfig
 ---@field chooser? harnt.approvals.Chooser how approval prompts are shown
 
 ---@class harnt.KeymapConfig
 ---@field diff? { accept?: string, reject?: string, comment?: string, review?: string } diff review keys (buffer-local to the diff/review windows)
+---@field jump_agent? string key to jump between a diff and the agent that opened it, bound on both sides (default "<leader>t"). Only bound when edgy.nvim isn't detected — with edgy, dock both (filetypes "harnt_diff"/"harnt_terminal") and use its own window navigation instead
 
 ---@class harnt.Config
 ---@field diff harnt.DiffConfig
@@ -68,6 +69,10 @@ function M.setup(opts)
 
   if merged.keymaps.diff ~= nil then
     require("harnt.services.diff").set_keys(merged.keymaps.diff)
+  end
+
+  if merged.keymaps.jump_agent ~= nil then
+    require("harnt.manager").set_jump_key(merged.keymaps.jump_agent)
   end
 
   M.options = merged

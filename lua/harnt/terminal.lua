@@ -35,6 +35,12 @@ local builtin = {
     vim.cmd(opts.split or "botright vsplit")
     local win = vim.api.nvim_get_current_win()
     local buf = vim.api.nvim_create_buf(false, false)
+    -- A stable filetype (unset otherwise) so a layout plugin (e.g. edgy.nvim)
+    -- can dock this window by matching on it. Mirrors how snacks.terminal
+    -- tags its own terminal buffers `snacks_terminal` for the same reason —
+    -- when that opener is active, `snacks_terminal` is the one to match on
+    -- instead; overwriting it here would break existing snacks-wide setups.
+    vim.bo[buf].filetype = "harnt_terminal"
     vim.api.nvim_win_set_buf(win, buf)
 
     local on_exit = opts.on_exit

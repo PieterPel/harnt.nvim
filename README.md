@@ -156,8 +156,13 @@ require("harnt").setup({
       comment = "<leader>c",     -- comment on the current line
       review  = "<leader>R",     -- reject + send the comments back as feedback
     },
+    jump_agent = "<leader>t",    -- jump between a diff and the agent that opened it
+                                 -- (bound only when edgy.nvim isn't detected — see below)
   },
-  diff = { presenter = nil },    -- how a proposed change is *shown* (see below)
+  diff = {
+    presenter = nil,             -- how a proposed change is *shown* (see below)
+    style = nil,                 -- or pick a built-in by name: "split" (default) | "inline" | "docked"
+  },
   approvals = { chooser = nil }, -- how an approval prompt is *shown* (see below)
 })
 ```
@@ -192,6 +197,39 @@ The keys (`accept`/`reject`/`comment`/`review`) are bound on those buffers by th
 service regardless of presenter, so a custom presenter never has to re-implement
 them. `view.original_buf` is absent for review-only diffs (an agent that applies
 its own edit and only wants a verdict), where `proposed_buf` is a rendered patch.
+
+### Docking the diff next to the agent (edgy.nvim)
+
+By default a diff opens in its own tab, which hides whatever tab the agent's
+terminal is in. Two ways to get both on screen at once:
+
+**With [edgy.nvim](https://github.com/folke/edgy.nvim):** set
+`diff = { style = "docked" }` so the diff opens as a split in your *current*
+tab instead of a new one, then give edgy a view for it and for the terminal.
+edgy docks by matching a window's exact `&filetype`, so harnt tags both
+buffers: the terminal is `harnt_terminal` (or `snacks_terminal` if
+`snacks.nvim` is your terminal opener — don't retarget that one, other
+snacks-wide edgy views may already rely on it) and a docked diff is
+`harnt_diff` (fixed regardless of the file being edited, so syntax
+highlighting is reattached separately via Tree-sitter — you still get full
+highlighting).
+
+```lua
+require("harnt").setup({ diff = { style = "docked" } })
+
+require("edgy").setup({
+  right = {
+    { ft = "harnt_terminal", title = "Agent" }, -- or "snacks_terminal"
+    { ft = "harnt_diff", title = "Diff" },
+  },
+})
+```
+
+**Without edgy:** harnt binds a fallback keymap automatically (`jump_agent`,
+default `<leader>t`) on both the diff and the agent's terminal, so pressing it
+flips focus between the two — works with any `diff.style`, no config needed.
+It only binds when edgy isn't detected, so installing edgy doesn't leave a
+redundant keymap behind.
 
 ### Rendering approvals your own way
 

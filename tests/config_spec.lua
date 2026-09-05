@@ -105,4 +105,46 @@ describe("config.setup", function()
     diff.reject(id)
     diff.set_keys({ accept = "<leader>a", reject = "<leader>r" }) -- restore default
   end)
+
+  it('wires diff.style = "docked" into the diff service too', function()
+    config.setup({ diff = { style = "docked" } })
+    local baseline_tab = vim.fn.tabpagenr("$")
+    local id = diff.open(
+      { path = "/tmp/x.lua", proposed = { "a" }, original = { "a" } },
+      function() end
+    )
+    assert.equals(baseline_tab, vim.fn.tabpagenr("$")) -- docked: no new tab
+    diff.reject(id)
+  end)
+
+  it("wires keymaps.jump_agent into the manager's jump key", function()
+    local manager = require("harnt.manager")
+    local registry = require("harnt.providers")
+    local provider = require("tests.support.provider")
+
+    config.setup({ keymaps = { jump_agent = "<leader>gg" } })
+    registry.register(provider("cfgtest", { cmd = { "agent" } }))
+    local term_buf = vim.api.nvim_create_buf(false, true)
+    manager.launch("cfgtest", {
+      open_terminal = function()
+        return { buf = term_buf, win = 0, job = 0 }
+      end,
+    })
+
+    diff.set_presenter(nil)
+    local id = diff.open(
+      { path = "/tmp/x", proposed = { "a" }, origin = "cfgtest" },
+      function() end
+    )
+    local maps = vim.api.nvim_buf_get_keymap(term_buf, "n")
+    local bound = vim.tbl_filter(function(m)
+      return m.lhs == "<leader>gg" or m.lhs == vim.keycode("<leader>gg")
+    end, maps)
+    assert.equals(1, #bound)
+
+    diff.reject(id)
+    manager.stop("cfgtest")
+    registry.clear()
+    manager.set_jump_key("<leader>t") -- restore default
+  end)
 end)

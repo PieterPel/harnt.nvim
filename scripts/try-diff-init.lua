@@ -2,8 +2,10 @@
 -- Init for `just try-diff [style]`: a clean Neovim with ONLY harnt loaded,
 -- seeded with an already-open diff you can review immediately — no real agent
 -- CLI, no auth. Compares the built-in presenters: `just try-diff` (default,
--- side-by-side split) vs `just try-diff inline` (the VSCode-style overlay).
--- Not used at runtime; purely a manual harness.
+-- side-by-side split), `just try-diff inline` (the VSCode-style overlay), or
+-- `just try-diff docked` (the same overlay, opened in the current tab — see
+-- README.md's edgy.nvim section). Not used at runtime; purely a manual
+-- harness.
 
 local script = debug.getinfo(1, "S").source:sub(2)
 local root = vim.fn.fnamemodify(script, ":h:h")
@@ -57,7 +59,7 @@ vim.schedule(function()
       "  <leader>a   accept       <leader>r   reject",
       "  <leader>c   comment      <leader>R   review",
       "",
-      "  switch style:  just try-diff inline   (or split)",
+      "  switch style:  just try-diff inline   (or split, docked)",
     }, "\n"),
     vim.log.levels.INFO,
     { title = "harnt" }
