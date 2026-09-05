@@ -61,8 +61,16 @@
 
           # Export VIMRUNTIME so emmylua (CLI check + LS) can resolve Neovim's Lua
           # runtime and type-check `vim.*` properly (see .luarc.json workspace.library).
+          #
+          # HARNT_SNACKS_NVIM/HARNT_EDGY_NVIM: neither is ever a runtime
+          # dependency of harnt (bet #4 — dependency-light) — they're here
+          # purely so `just try-edgy` can demonstrate the real docking flow
+          # from README.md without requiring you to install them in your own
+          # config first.
           shellHook = ''
             export VIMRUNTIME="$(nvim -l <(printf 'io.write(vim.env.VIMRUNTIME)') 2>/dev/null)"
+            export HARNT_SNACKS_NVIM="${pkgs.vimPlugins.snacks-nvim}"
+            export HARNT_EDGY_NVIM="${pkgs.vimPlugins.edgy-nvim}"
           '';
 
           meta.description = lib.mkDefault "harnt.nvim development shell";
