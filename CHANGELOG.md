@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format follows
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it leaves
 `0.x`.
 
+## [0.3.0](https://github.com/PieterPel/harnt.nvim/compare/v0.2.0...v0.3.0) (2026-09-06)
+
+
+### Features
+
+* package harnt.nvim as a flake output (packages.default) ([#10](https://github.com/PieterPel/harnt.nvim/issues/10)) ([b4b4424](https://github.com/PieterPel/harnt.nvim/commit/b4b4424152fdb943b9a640f63163be71fc6a66ef))
+
 ## [0.2.0](https://github.com/PieterPel/harnt.nvim/compare/v0.1.1...v0.2.0) (2026-09-05)
 
 
