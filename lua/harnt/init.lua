@@ -10,9 +10,35 @@ local M = {}
 --- diff-accept/…). Third parties and later milestones add entries here.
 ---@type table<string, fun(args: string[])>
 M.subcommands = {
-  --- `:Harnt open [provider]` — launch a provider (default: claude).
+  --- `:Harnt open [provider] [--prompt-file <path>]` — launch a provider (default:
+  --- claude), optionally with the file's contents as its initial prompt.
   open = function(args)
-    require("harnt.manager").launch(args[1] or "claude")
+    local name, prompt_file ---@type string?, string?
+    local i = 1
+    while i <= #args do
+      if args[i] == "--prompt-file" then
+        prompt_file = args[i + 1]
+        if not prompt_file then
+          vim.notify("harnt: --prompt-file needs a path", vim.log.levels.ERROR)
+          return
+        end
+        i = i + 2
+      else
+        name = name or args[i]
+        i = i + 1
+      end
+    end
+
+    local prompt
+    if prompt_file then
+      local path = vim.fs.normalize(prompt_file)
+      if vim.fn.filereadable(path) ~= 1 then
+        vim.notify(("harnt: cannot read prompt file %q"):format(path), vim.log.levels.ERROR)
+        return
+      end
+      prompt = table.concat(vim.fn.readfile(path), "\n")
+    end
+    require("harnt.manager").launch(name or "claude", { prompt = prompt })
   end,
   --- `:Harnt stop [provider]` — stop one provider, or all of them.
   stop = function(args)
@@ -118,6 +144,34 @@ function M.subcommand_names()
   local names = vim.tbl_keys(M.subcommands)
   table.sort(names)
   return names
+end
+
+--- `:Harnt` completion: the subcommand, then provider names for the subcommands
+--- that take one, and a file path after `open --prompt-file`.
+---@param arglead string
+---@param cmdline string
+---@return string[]
+function M.complete(arglead, cmdline)
+  local words = vim.split(cmdline, "%s+", { trimempty = true })
+  local done = #words - (arglead == "" and 0 or 1)
+  local sub = words[2]
+
+  local candidates ---@type string[]
+  if done <= 1 then
+    candidates = M.subcommand_names()
+  elseif sub == "open" and words[done] == "--prompt-file" then
+    return vim.fn.getcompletion(arglead, "file")
+  elseif sub == "open" or sub == "toggle" or sub == "stop" then
+    candidates = require("harnt.providers").list()
+    if sub == "open" then
+      candidates[#candidates + 1] = "--prompt-file"
+    end
+  else
+    return {}
+  end
+  return vim.tbl_filter(function(candidate)
+    return candidate:find(arglead, 1, true) == 1
+  end, candidates)
 end
 
 --- A statusline fragment naming the running providers (empty when idle). Drop

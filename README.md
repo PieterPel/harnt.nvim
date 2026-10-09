@@ -124,7 +124,7 @@ appears. The keys are the same for every agent.
 
 | Command | Does |
 |---|---|
-| `:Harnt open [provider]` | Launch a provider's TUI (default `claude`) |
+| `:Harnt open [provider] [--prompt-file <path>]` | Launch a provider's TUI (default `claude`), optionally with the file's contents as its first prompt |
 | `:Harnt toggle [provider]` | Show/hide (or launch) a provider's terminal |
 | `:Harnt stop [provider]` | Stop one provider, or all |
 | `:Harnt send` | Send the current file/selection to running agents (@-mention) |

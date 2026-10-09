@@ -106,6 +106,15 @@ prompt — the same channel OpenCode's own editor integration uses — left for 
 user to send, not auto-submitted. (`/tui/submit-prompt`, `/tui/clear-prompt`, and
 `/tui/publish` exist too; we only need append.)
 
+**Initial prompt** (`launch(name, { prompt })` / `:Harnt open opencode
+--prompt-file …`). `opencode attach` takes no prompt argument, and typing into the
+TUI would need a "TUI ready" signal the server doesn't expose. Instead harnt
+creates a session over the classic API (`POST /session`), queues the prompt with
+`POST /session/{id}/prompt_async {parts:[{type:"text",text}]}`, and launches
+`opencode attach <url> --session <id>`. Unlike the v2 `/api/session/{id}/prompt`
+(see below), the classic endpoint runs the turn server-side, so the TUI attaches
+to a turn already underway and renders it. Verified against `opencode 1.18.31`.
+
 All of this protocol knowledge lives in `providers/opencode.lua`; the generic
 layers stay agent-agnostic (per repo convention).
 

@@ -77,6 +77,14 @@ require("harnt").setup({opts})
 require("harnt").register_provider({provider})
     Register a custom agent. See |harnt-extending| and docs/PROVIDERS.md.
 
+                                                    *harnt.manager.launch()*
+require("harnt.manager").launch({name}, {opts})
+    Launch a provider (no-op if it is already running). `opts.prompt` is the
+    agent's first message; each provider delivers it natively: Claude and Codex
+    as the CLI's positional prompt, Antigravity via `agy -i`, OpenCode by
+    starting a server session with the prompt and attaching the TUI to it. A
+    provider without `accepts_prompt` warns and launches without it.
+
                                                           *harnt.statusline()*
 require("harnt").statusline()
     A statusline fragment naming running providers (empty when idle):
@@ -86,8 +94,11 @@ require("harnt").statusline()
 4. COMMANDS                                                    *harnt-commands*
 
                                                                        *:Harnt*
-:Harnt open [provider]      Launch a provider's TUI in a split and host its
-                            channel. Default provider: `claude`.
+:Harnt open [provider] [--prompt-file {path}]
+                            Launch a provider's TUI in a split and host its
+                            channel. Default provider: `claude`. With
+                            `--prompt-file`, the file's contents become the
+                            agent's first prompt (see |harnt.manager.launch()|).
 :Harnt toggle [provider]    Show/hide (or launch) a provider's terminal window.
 :Harnt stop [provider]      Stop one provider, or all providers if omitted.
 :Harnt send                 Send the current file/selection to running agents

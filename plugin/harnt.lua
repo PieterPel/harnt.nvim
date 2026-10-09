@@ -12,9 +12,7 @@ vim.api.nvim_create_user_command("Harnt", function(cmd)
 end, {
   nargs = "*",
   desc = "harnt.nvim",
-  complete = function(arglead)
-    return vim.tbl_filter(function(sub)
-      return sub:find(arglead, 1, true) == 1
-    end, require("harnt").subcommand_names())
+  complete = function(arglead, cmdline)
+    return require("harnt").complete(arglead, cmdline)
   end,
 })

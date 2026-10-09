@@ -121,16 +121,16 @@ if AGENT == "antigravity" then
 elseif AGENT == "claude" then
   local claude = require("harnt.providers.claude")
   local base = claude.cmd
-  claude.cmd = function(session)
-    local cmd = base(session)
+  claude.cmd = function(session, ctx)
+    local cmd = base(session, ctx)
     cmd[#cmd + 1] = PROMPT
     return cmd
   end
 elseif AGENT == "codex" then
   local codex = require("harnt.providers.codex")
   local base = codex.cmd
-  codex.cmd = function(session)
-    local cmd = base(session)
+  codex.cmd = function(session, ctx)
+    local cmd = base(session, ctx)
     -- `approval_policy=untrusted` makes codex REQUEST approval before editing, so
     -- the app-server sends `item/fileChange/requestApproval` — which harnt taps
     -- and turns into the diff. Without it codex auto-applies and there's nothing

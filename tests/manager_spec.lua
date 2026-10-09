@@ -109,6 +109,64 @@ describe("manager.launch", function()
   end)
 end)
 
+describe("manager.launch prompt", function()
+  ---@param accepts boolean?
+  ---@return table seen
+  local function register_prompter(accepts)
+    local seen = {}
+    registry.register(provider("prompter", {
+      accepts_prompt = accepts,
+      start = function(ctx)
+        seen.start_ctx = ctx
+        return {
+          info = { port = 1 },
+          on = function() end,
+          respond = function() end,
+          interrupt = function() end,
+          stop = function() end,
+        }
+      end,
+      cmd = function(_session, ctx)
+        seen.cmd_ctx = ctx
+        return { "agent" }
+      end,
+    }))
+    return seen
+  end
+
+  it("hands the prompt to a provider that accepts it, in start and cmd", function()
+    local seen = register_prompter(true)
+    manager.launch("prompter", { prompt = "do it", open_terminal = fake_terminal })
+    assert.equals("do it", seen.start_ctx.prompt)
+    assert.equals("do it", seen.cmd_ctx.prompt)
+    assert.same({}, notifications)
+  end)
+
+  it("does not mutate the caller's ctx", function()
+    register_prompter(true)
+    local ctx = { cwd = "/tmp" }
+    manager.launch("prompter", { ctx = ctx, prompt = "do it", open_terminal = fake_terminal })
+    assert.is_nil(ctx.prompt)
+  end)
+
+  it("warns and launches without it when the provider does not accept prompts", function()
+    local seen = register_prompter(nil)
+    local inst = manager.launch("prompter", { prompt = "do it", open_terminal = fake_terminal })
+    assert.is_not_nil(inst)
+    assert.is_nil(seen.start_ctx.prompt)
+    assert.equals(vim.log.levels.WARN, notifications[#notifications].level)
+    assert.is_truthy(notifications[#notifications].msg:find("does not support initial prompts"))
+  end)
+
+  it("warns when the provider is already running", function()
+    register_prompter(true)
+    manager.launch("prompter", { open_terminal = fake_terminal })
+    manager.launch("prompter", { prompt = "do it", open_terminal = fake_terminal })
+    assert.equals(vim.log.levels.WARN, notifications[#notifications].level)
+    assert.is_truthy(notifications[#notifications].msg:find("already running"))
+  end)
+end)
+
 describe("manager.stop", function()
   it("drops the provider from running()", function()
     registry.register(make_provider("headless", {}))

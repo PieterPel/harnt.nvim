@@ -40,6 +40,22 @@ describe("claude.env", function()
   end)
 end)
 
+describe("claude.cmd", function()
+  local session = { settings_json = "{}" } --[[@as harnt.claude.Session]]
+
+  it("launches the TUI with the injected settings", function()
+    assert.same({ "claude", "--settings", "{}" }, claude.cmd(session, {}))
+  end)
+
+  it("passes the initial prompt as the positional argument", function()
+    assert.is_true(claude.accepts_prompt)
+    assert.same(
+      { "claude", "--settings", "{}", "--", "- fix the bug" },
+      claude.cmd(session, { prompt = "- fix the bug" })
+    )
+  end)
+end)
+
 describe("claude.tools", function()
   it("exposes the expected tool set", function()
     local names = {}

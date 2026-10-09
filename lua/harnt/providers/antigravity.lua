@@ -370,9 +370,20 @@ local function install_hooks(cwd, sock)
   end
 end
 
+M.accepts_prompt = true
+
 --- The launch command: the native `agy` TUI. Hooks are discovered from
---- `.agents/hooks.json` in the workspace, so no special env/flags are needed.
-M.cmd = { "agy" }
+--- `.agents/hooks.json` in the workspace, so no special env/flags are needed. An
+--- initial prompt rides `-i`, which runs it and stays interactive.
+---@param _session harnt.Session
+---@param ctx harnt.SessionContext
+---@return string[]
+function M.cmd(_session, ctx)
+  if ctx.prompt then
+    return { "agy", "-i", ctx.prompt }
+  end
+  return { "agy" }
+end
 
 --- No spawn-time env: agy discovers us via the `.agents/hooks.json` bridge, not
 --- environment variables.
