@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format follows
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it leaves
 `0.x`.
 
+## [0.4.0](https://github.com/PieterPel/harnt.nvim/compare/v0.3.0...v0.4.0) (2026-10-09)
+
+
+### Features
+
+* initial prompt on launch (LaunchOpts.prompt, :Harnt open --prompt-file) ([#12](https://github.com/PieterPel/harnt.nvim/issues/12)) ([f6d0de7](https://github.com/PieterPel/harnt.nvim/commit/f6d0de7718cf9409b968d1776b5a0606ad3c49e0))
+
 ## [0.3.0](https://github.com/PieterPel/harnt.nvim/compare/v0.2.0...v0.3.0) (2026-09-06)
 
 
