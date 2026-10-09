@@ -29,11 +29,12 @@ reverse-MCP base (§4); you rarely implement `start` from scratch.
 | `name` | ✓ | `string` | unique registry key |
 | `detect` | ✓ | `fun(): boolean` | CLI present + authenticated |
 | `start` | ✓ | `fun(ctx): Session` | begin a session (usually `reverse_mcp.start`) |
-| `cmd` | | `string[]` | command to spawn the agent's TUI (Shape A) |
+| `cmd` | | `string[] \| fun(session, ctx): string[]` | command to spawn the agent's TUI (Shape A) |
 | `env` | | `fun(info): table<string,string>` | env for the spawned TUI (discovery) |
 | `review` | | `fun(ctx: ReviewContext)` | deliver diff-review feedback natively |
 | `on_selection` | | `fun(session)` | push a live selection update as the cursor moves |
 | `on_mention` | | `fun(session)` | @-mention the current file/selection to the agent |
+| `accepts_prompt` | | `boolean` | delivers `ctx.prompt` (`launch(name, { prompt })`) as the agent's first message, from `start` and/or `cmd`; without it a prompted launch warns |
 
 The optional capabilities are how harnt avoids lowest-common-denominator flatten-
 ing: the generic layer calls them and the *provider* decides the native shape.

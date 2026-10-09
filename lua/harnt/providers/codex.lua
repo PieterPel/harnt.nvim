@@ -551,12 +551,20 @@ function M.health(report)
   end
 end
 
+M.accepts_prompt = true
+
 --- The native-TUI launch command (dynamic: needs the proxy's ws port). The
---- manager spawns this in a terminal split; it connects back to our proxy.
+--- manager spawns this in a terminal split; it connects back to our proxy. The
+--- initial prompt rides codex's positional `[PROMPT]` argument.
 ---@param session harnt.codex.Session
+---@param ctx harnt.SessionContext
 ---@return string[]
-function M.cmd(session)
-  return { "codex", "--remote", session.info.remote_url }
+function M.cmd(session, ctx)
+  local cmd = { "codex", "--remote", session.info.remote_url }
+  if ctx.prompt then
+    vim.list_extend(cmd, { "--", ctx.prompt })
+  end
+  return cmd
 end
 
 --- A Codex session. `info.remote_url` is the ws endpoint the native TUI dials.

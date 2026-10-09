@@ -81,6 +81,7 @@ end)
 
 ---@class harnt.manager.LaunchOpts
 ---@field ctx? harnt.SessionContext
+---@field prompt? string first message for the agent, delivered the provider's native way
 ---@field open_terminal? fun(opts: harnt.terminal.Opts): harnt.terminal.Handle injectable for tests
 
 --- Launch a provider by name. Idempotent: a second call returns the running
@@ -93,6 +94,12 @@ function M.launch(name, opts)
   opts = opts or {}
   local existing = instances[name]
   if existing then
+    if opts.prompt then
+      vim.notify(
+        ("harnt: %q is already running; the initial prompt was not sent"):format(name),
+        vim.log.levels.WARN
+      )
+    end
     return existing
   end
 
@@ -109,7 +116,17 @@ function M.launch(name, opts)
     return nil
   end
 
-  local ctx = opts.ctx or {}
+  local ctx = vim.tbl_extend("force", {}, opts.ctx or {})
+  if opts.prompt then
+    if provider.accepts_prompt then
+      ctx.prompt = opts.prompt
+    else
+      vim.notify(
+        ("harnt: %q does not support initial prompts; launching without it"):format(name),
+        vim.log.levels.WARN
+      )
+    end
+  end
   local session = provider.start(ctx)
   ---@type harnt.manager.Instance
   local instance = { name = name, session = session }
@@ -135,7 +152,7 @@ function M.launch(name, opts)
   -- session (Codex needs the proxy's ws port in its `--remote` argument); `env`
   -- carries reverse-MCP discovery vars for providers that use them. An empty `cmd`
   -- means no external process (e.g. the Fake provider).
-  local cmd = type(provider.cmd) == "function" and provider.cmd(session) or provider.cmd
+  local cmd = type(provider.cmd) == "function" and provider.cmd(session, ctx) or provider.cmd
   ---@cast cmd string[]
   if #cmd > 0 then
     local info = (session --[[@as { info: harnt.reverse_mcp.Info }]]).info

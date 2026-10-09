@@ -1,4 +1,4 @@
----@diagnostic disable: undefined-field, need-check-nil, missing-fields
+---@diagnostic disable: undefined-field, need-check-nil, missing-fields, param-type-mismatch
 -- luassert narrowing is invisible to emmylua; hook payloads are partial by design.
 
 local antigravity = require("harnt.providers.antigravity")
@@ -26,7 +26,12 @@ describe("antigravity provider", function()
   end)
 
   it("cmd is the native agy TUI", function()
-    assert.same({ "agy" }, antigravity.cmd)
+    assert.same({ "agy" }, antigravity.cmd({}, {}))
+  end)
+
+  it("cmd runs the initial prompt interactively via -i", function()
+    assert.is_true(antigravity.accepts_prompt)
+    assert.same({ "agy", "-i", "fix it" }, antigravity.cmd({}, { prompt = "fix it" }))
   end)
 
   it("health() emits diagnostics via the report adapter", function()

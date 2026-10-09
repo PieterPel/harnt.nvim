@@ -18,9 +18,20 @@ describe("codex provider", function()
   end)
 
   it("cmd() launches the native TUI against the proxy ws endpoint", function()
-    local cmd =
-      codex.cmd({ info = { remote_url = "ws://127.0.0.1:4500", port = 4500 } } --[[@as harnt.codex.Session]])
+    local cmd = codex.cmd(
+      { info = { remote_url = "ws://127.0.0.1:4500", port = 4500 } } --[[@as harnt.codex.Session]],
+      {}
+    )
     assert.same({ "codex", "--remote", "ws://127.0.0.1:4500" }, cmd)
+  end)
+
+  it("cmd() passes the initial prompt as codex's positional [PROMPT]", function()
+    assert.is_true(codex.accepts_prompt)
+    local cmd = codex.cmd(
+      { info = { remote_url = "ws://127.0.0.1:4500", port = 4500 } } --[[@as harnt.codex.Session]],
+      { prompt = "fix it" }
+    )
+    assert.same({ "codex", "--remote", "ws://127.0.0.1:4500", "--", "fix it" }, cmd)
   end)
 
   describe("proxy tap (_router)", function()

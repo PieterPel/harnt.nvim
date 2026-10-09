@@ -120,6 +120,14 @@ describe("providers registry", function()
     end)
   end)
 
+  it("rejects a non-boolean accepts_prompt", function()
+    local p = stub("prompter")
+    p.accepts_prompt = "yes"
+    assert.has_error(function()
+      registry.register(p)
+    end)
+  end)
+
   it("accepts a provider that serves the selection by push", function()
     local p = stub("pusher")
     p.pull_selection = nil

@@ -12,6 +12,7 @@ local M = {}
 --- service handle, chosen cwd, …); kept open-ended on purpose.
 ---@class harnt.SessionContext
 ---@field cwd? string working directory for the agent
+---@field prompt? string initial prompt; set only for providers with `accepts_prompt`
 
 --- A live agent session. `push` (an unsolicited notification channel) is *not*
 --- here: whether a session can push is a transport property, so it lives on the
@@ -63,13 +64,14 @@ local M = {}
 ---@field name string unique registry key
 ---@field detect fun(): boolean CLI present + authenticated
 ---@field start fun(ctx: harnt.SessionContext): harnt.Session
----@field cmd string[]|fun(session: harnt.Session): string[] command to spawn the agent's own TUI (empty = no external process, e.g. the Fake provider); a function when it needs session info (e.g. a proxy port)
+---@field cmd string[]|fun(session: harnt.Session, ctx: harnt.SessionContext): string[] command to spawn the agent's own TUI (empty = no external process, e.g. the Fake provider); a function when it needs session info (e.g. a proxy port) or the ctx (e.g. the initial prompt)
 ---@field env fun(info: harnt.reverse_mcp.Info): table<string, string> env for the spawned TUI (reverse-MCP discovery vars; `{}` when none)
 ---@field review fun(ctx: harnt.ReviewContext) deliver diff-review feedback the agent's native way
 ---@field health fun(report: harnt.health.Report) provider-specific `:checkhealth harnt` probes
 ---@field on_mention fun(ctx: harnt.MentionContext) @-mention the current file/selection to the agent (required selection baseline)
 ---@field push_selection? fun(session: harnt.Session) optional ambient upgrade — PUSH a live selection update as the cursor moves
 ---@field pull_selection? fun(): harnt.context.Selection? optional ambient upgrade — answer the current selection when the agent asks (PULL)
+---@field accepts_prompt? boolean delivers `ctx.prompt` (via `start` and/or `cmd`) as the agent's first message; without it, launching with a prompt warns instead of dropping it
 
 ---@type table<string, harnt.Provider>
 local registry = {}
@@ -125,6 +127,12 @@ local function validate(provider)
       )
     )
   end
+  assert(
+    provider.accepts_prompt == nil or type(provider.accepts_prompt) == "boolean",
+    ("register_provider: provider %q field accepts_prompt must be a boolean when present"):format(
+      name
+    )
+  )
 end
 
 --- Register (or replace) a provider.

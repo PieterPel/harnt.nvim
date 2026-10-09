@@ -342,6 +342,55 @@ local function wait_healthy(port, timeout_ms)
   return ok and healthy
 end
 
+--- `httpclient.request`, blocking (pumping the loop) until it answers or
+--- `timeout_ms` elapses.
+---@param opts harnt.httpclient.RequestOpts
+---@param timeout_ms integer
+---@return harnt.httpclient.Response?
+local function request_sync(opts, timeout_ms)
+  local done, response = false, nil
+  httpclient.request(opts, function(res)
+    done, response = true, res
+  end)
+  vim.wait(timeout_ms, function()
+    return done
+  end, 20)
+  return response
+end
+
+--- Create a server session and queue `prompt` on it. The classic `/session` API
+--- runs the turn server-side (unlike `/api/session/{id}/prompt`, which only admits
+--- it), so the turn is underway by the time the TUI attaches with `--session`.
+---@param port integer
+---@param prompt string
+---@return string? session_id
+function M._start_prompted_session(port, prompt)
+  local res =
+    request_sync({ port = port, method = "POST", path = "/session", json = vim.empty_dict() }, 5000)
+  local ok, body = pcall(vim.json.decode, res and res.body or "")
+  local id = ok and type(body) == "table" and body.id or nil
+  if type(id) ~= "string" then
+    vim.notify(
+      "harnt: opencode did not create a session for the initial prompt",
+      vim.log.levels.ERROR
+    )
+    return nil
+  end
+  httpclient.request({
+    port = port,
+    method = "POST",
+    path = ("/session/%s/prompt_async"):format(id),
+    json = { parts = { { type = "text", text = prompt } } },
+  }, function(prompt_res)
+    if not prompt_res or prompt_res.status >= 300 then
+      vim.schedule(function()
+        vim.notify("harnt: opencode rejected the initial prompt", vim.log.levels.ERROR)
+      end)
+    end
+  end)
+  return id
+end
+
 --- Whether the `opencode` CLI is available.
 ---@return boolean
 function M.detect()
@@ -367,12 +416,19 @@ function M.health(report)
   )
 end
 
+M.accepts_prompt = true
+
 --- The native-TUI launch command (dynamic: needs the served server's URL). The
---- manager spawns this in a terminal split; it attaches to our `opencode serve`.
+--- manager spawns this in a terminal split; it attaches to our `opencode serve`,
+--- on the session already running the initial prompt when there is one.
 ---@param session harnt.opencode.Session
 ---@return string[]
 function M.cmd(session)
-  return { "opencode", "attach", session.info.server_url }
+  local cmd = { "opencode", "attach", session.info.server_url }
+  if session.info.session_id then
+    vim.list_extend(cmd, { "--session", session.info.session_id })
+  end
+  return cmd
 end
 
 --- No spawn-time env: the native TUI discovers the server via its `attach`
@@ -408,7 +464,7 @@ end
 
 --- An OpenCode session. `info.server_url` is what the native TUI attaches to.
 ---@class harnt.opencode.Session : harnt.Session
----@field info { server_url: string, port: integer }
+---@field info { server_url: string, port: integer, session_id?: string }
 ---@field append_prompt fun(text: string) append text to the attached TUI's prompt input
 ---@field pending_permission fun(): table? the latest un-replied permission, if any
 
@@ -494,6 +550,8 @@ function M.start(ctx)
 
   ---@type { close: fun() }?
   local stream
+  ---@type string?
+  local session_id
   local stopped = false
 
   -- Wait for the server, then tap /event. If it never comes up, fail loudly.
@@ -509,6 +567,9 @@ function M.start(ctx)
         end
       end,
     })
+    if ctx.prompt then
+      session_id = M._start_prompted_session(port, ctx.prompt)
+    end
   else
     vim.schedule(function()
       vim.notify("harnt: `opencode serve` did not become healthy", vim.log.levels.ERROR)
@@ -528,7 +589,7 @@ function M.start(ctx)
 
   ---@type harnt.opencode.Session
   local session = {
-    info = { server_url = server_url, port = port },
+    info = { server_url = server_url, port = port, session_id = session_id },
     append_prompt = append_prompt,
     pending_permission = function()
       return pending_permission

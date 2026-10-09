@@ -26,6 +26,66 @@ describe("opencode provider", function()
     assert.same({ "opencode", "attach", "http://127.0.0.1:4096" }, cmd)
   end)
 
+  it("cmd() attaches to the prompted session when there is one", function()
+    local cmd = opencode.cmd({
+      info = { server_url = "http://127.0.0.1:4096", port = 4096, session_id = "ses_1" },
+    } --[[@as harnt.opencode.Session]])
+    assert.same({ "opencode", "attach", "http://127.0.0.1:4096", "--session", "ses_1" }, cmd)
+  end)
+
+  describe("_start_prompted_session", function()
+    local http = require("harnt.transport.http")
+
+    it("creates a session and queues the prompt on it", function()
+      assert.is_true(opencode.accepts_prompt)
+      local requests = {}
+      local server = assert(http.server({
+        on_request = function(req)
+          requests[#requests + 1] = req
+          if req.path == "/session" then
+            return { status = 200, body = '{"id":"ses_1"}' }
+          end
+          return { status = 204 }
+        end,
+      }))
+
+      local id = opencode._start_prompted_session(server.port, "fix it")
+      vim.wait(2000, function()
+        return #requests == 2
+      end, 10)
+      server.close()
+
+      assert.equals("ses_1", id)
+      assert.equals("POST", requests[1].method)
+      assert.equals("/session", requests[1].path)
+      assert.equals("/session/ses_1/prompt_async", requests[2].path)
+      assert.same(
+        { parts = { { type = "text", text = "fix it" } } },
+        vim.json.decode(requests[2].body)
+      )
+    end)
+
+    it("notifies and returns nil when no session is created", function()
+      local server = assert(http.server({
+        on_request = function()
+          return { status = 500, body = "" }
+        end,
+      }))
+      local orig_notify = vim.notify
+      local notified
+      vim.notify = function(msg, level)
+        notified = { msg = msg, level = level }
+      end
+
+      local id = opencode._start_prompted_session(server.port, "fix it")
+      vim.notify = orig_notify
+      server.close()
+
+      assert.is_nil(id)
+      assert.equals(vim.log.levels.ERROR, notified.level)
+    end)
+  end)
+
   it("on_mention appends a native @path mention to the TUI prompt", function()
     local buf = vim.api.nvim_create_buf(true, false)
     vim.api.nvim_buf_set_name(buf, vim.fn.getcwd() .. "/lua/harnt/init.lua")

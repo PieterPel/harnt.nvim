@@ -130,12 +130,20 @@ end
 ---@class harnt.claude.Session : harnt.reverse_mcp.Session
 ---@field settings_json string additional settings (our PostToolUse hook) passed at launch
 
+M.accepts_prompt = true
+
 --- The launch command: the native TUI with our edit-recording hook injected via
---- `--settings` (dynamic — the hook file path is per-session).
+--- `--settings` (dynamic — the hook file path is per-session), plus the initial
+--- prompt as the CLI's positional argument.
 ---@param session harnt.claude.Session
+---@param ctx harnt.SessionContext
 ---@return string[]
-function M.cmd(session)
-  return { "claude", "--settings", session.settings_json }
+function M.cmd(session, ctx)
+  local cmd = { "claude", "--settings", session.settings_json }
+  if ctx.prompt then
+    vim.list_extend(cmd, { "--", ctx.prompt })
+  end
+  return cmd
 end
 
 --- Whether the `claude` CLI is available.
